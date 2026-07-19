@@ -841,6 +841,29 @@ const stopMonitoring = async () => {
       <!-- Leaflet Map -->
       <div class="map-container">
         <div id="map"></div>
+        
+        <!-- Map Legend -->
+        <div class="map-legend">
+          <div class="legend-title">⚡ Strike Age Legend</div>
+          <div class="legend-items">
+            <div class="legend-item-style">
+              <span class="legend-dot dot-danger"></span>
+              <span class="legend-text">Active Front (&lt; 15m)</span>
+            </div>
+            <div class="legend-item-style">
+              <span class="legend-dot dot-warning"></span>
+              <span class="legend-text">Recent (&lt; 60m)</span>
+            </div>
+            <div class="legend-item-style">
+              <span class="legend-dot dot-muted"></span>
+              <span class="legend-text">Historical (&gt; 60m)</span>
+            </div>
+            <div class="legend-item-style" style="border-top: 1px solid rgba(255, 255, 255, 0.05); padding-top: 0.3rem; margin-top: 0.1rem;">
+              <span class="legend-dot dot-info"></span>
+              <span class="legend-text">Outside target area</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Logs and Detections Tabs -->
@@ -958,6 +981,14 @@ const stopMonitoring = async () => {
                   </li>
                   <li><strong>Configure Duration:</strong> Use the slider to set a timeout from 1 to 4 hours. The interface shows the estimated API call count and monthly free limit percentage.</li>
                   <li><strong>Start Monitoring:</strong> Click <strong>▶ Start Monitoring</strong>. Flash Finder will query XWeather every 5 minutes. If strikes fall inside the region, a rich Discord alert with map links is sent.</li>
+                  <li><strong>Visual Age-Fading & Legend:</strong> Strikes are color-coded based on their age in minutes to track storm fronts:
+                    <ul>
+                      <li>🔴 <strong>Active Front (&lt; 15 mins)</strong>: Vibrant neon-red circles.</li>
+                      <li>🟠 <strong>Recent (&lt; 60 mins)</strong>: Warm orange circles.</li>
+                      <li>⚪ <strong>Historical (&gt; 60 mins)</strong>: Faded gray circles.</li>
+                      <li>🔵 <strong>Encroaching Buffer (Outside target area)</strong>: Neon-cyan circles showing storm proximity.</li>
+                    </ul>
+                  </li>
                 </ul>
               </section>
             </div>
@@ -1385,5 +1416,77 @@ const stopMonitoring = async () => {
 
 .docs-link:hover {
   color: var(--ace-text);
+}
+
+.map-legend {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  z-index: 1000;
+  background: var(--ace-bg-panel);
+  border: 1px solid var(--ace-border-strong);
+  border-radius: var(--ace-radius-sm);
+  padding: 0.8rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  font-family: var(--ace-font-body);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  pointer-events: none;
+}
+
+.legend-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--ace-text-subtle);
+  border-bottom: 1px solid var(--ace-border);
+  padding-bottom: 0.3rem;
+  margin-bottom: 0.2rem;
+}
+
+.legend-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.legend-item-style {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dot-danger {
+  background: var(--ace-danger);
+  box-shadow: 0 0 8px var(--ace-danger);
+}
+
+.dot-warning {
+  background: #f69d1d;
+  box-shadow: 0 0 6px #f69d1d;
+}
+
+.dot-info {
+  background: var(--ace-secondary);
+  box-shadow: 0 0 6px var(--ace-secondary);
+}
+
+.dot-muted {
+  background: var(--ace-text-subtle);
+  opacity: 0.6;
+}
+
+.legend-text {
+  font-size: 0.74rem;
+  color: var(--ace-text);
+  white-space: nowrap;
 }
 </style>
