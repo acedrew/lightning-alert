@@ -1,0 +1,30 @@
+#map {
+  height: 550px;
+  width: 100%;
+  border-radius: var(--ace-radius-lg);
+  border: 1px solid var(--ace-border-strong);
+  z-index: 1;
+}
+
+.leaflet-container {
+  background: var(--ace-bg-elevated) !important;
+}
+
+/* Customize Leaflet controls to match dark theme */
+.leaflet-bar a, .leaflet-bar a:hover {
+  background-color: var(--ace-bg-panel) !important;
+  color: var(--ace-text) !important;
+  border-bottom: 1px solid var(--ace-border) !important;
+}
+
+.leaflet-bar {
+  border: 1px solid var(--ace-border-strong) !important;
+  box-shadow: var(--ace-shadow) !important;
+}
+
+.leaflet-popup-content-wrapper, .leaflet-popup-tip {
+  background: var(--ace-bg-panel) !important;
+  color: var(--ace-text) !important;
+  border: 1px solid var(--ace-border-strong);
+  box-shadow: var(--ace-shadow);
+}
