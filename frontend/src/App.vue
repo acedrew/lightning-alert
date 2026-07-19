@@ -8,6 +8,7 @@ const API_BASE = '' // relative path since we serve it from FastAPI, or http://l
 const drawMode = ref(null) // null, 'circle', 'polygon'
 const drawHelpText = ref('')
 const timeoutHours = ref(2.0)
+const checkIntervalMinutes = ref(5)
 const activeTab = ref('strikes')
 const testingWebhook = ref(false)
 const localType = ref(null)
@@ -64,8 +65,8 @@ const hasDrawnShape = computed(() => {
 })
 
 const estimatedApiCalls = computed(() => {
-  // 5 minutes = 12 calls/hour
-  return timeoutHours.value * 12
+  const callsPerHour = 60 / checkIntervalMinutes.value
+  return Math.round(timeoutHours.value * callsPerHour)
 })
 
 const freeTierPercentage = computed(() => {
@@ -111,6 +112,9 @@ const fetchStatus = async () => {
       if (data.active) {
         localType.value = data.type
         localCoordinates.value = data.coordinates
+        if (data.interval_minutes) {
+          checkIntervalMinutes.value = data.interval_minutes
+        }
       }
       
       // Update map features based on status
@@ -595,7 +599,8 @@ const startMonitoring = async () => {
     const payload = {
       type: localType.value,
       coordinates: localCoordinates.value,
-      timeout_hours: timeoutHours.value
+      timeout_hours: timeoutHours.value,
+      interval_minutes: checkIntervalMinutes.value
     }
     
     const resp = await fetch(`${API_BASE}/api/start`, {
@@ -707,6 +712,23 @@ const stopMonitoring = async () => {
               <span class="slider-value">{{ timeoutHours }} hrs</span>
             </div>
             <div class="ace-field__hint">Monitoring will automatically stop after this duration.</div>
+          </div>
+
+          <div class="ace-field" style="margin-top: 1rem;">
+            <label class="ace-field__label">Check Frequency</label>
+            <div class="slider-container">
+              <input 
+                type="range" 
+                min="1" 
+                max="5" 
+                step="1" 
+                v-model.number="checkIntervalMinutes"
+                :disabled="status.active"
+                class="ace-input-slider"
+              />
+              <span class="slider-value">{{ checkIntervalMinutes }} min</span>
+            </div>
+            <div class="ace-field__hint">How often Flash Finder queries the API for new strikes.</div>
           </div>
           
           <div class="api-estimate">

@@ -30,6 +30,7 @@ state = {
     "coordinates": None,  # {center, radius} or {polygon}
     "checks_count": 0,
     "detections_count": 0,
+    "interval_minutes": 5.0,
     "recent_strikes": [],  # List of dicts
     "logs": [],  # List of status logs
     "seen_strike_ids": set(),  # Deduplication set
@@ -98,6 +99,7 @@ class StartTrackingRequest(BaseModel):
     type: str  # "circle" or "polygon"
     coordinates: Dict[str, Any]
     timeout_hours: float  # 1 to 4 hours
+    interval_minutes: float = 5.0  # 1 to 5 minutes
 
 async def send_discord_message(payload: Dict[str, Any]):
     config = load_config()
@@ -417,8 +419,9 @@ async def tracking_loop():
         while state["active"]:
             # Run check
             await check_lightning()
-            # Wait for 5 minutes (300 seconds), checking active status periodically
-            for _ in range(60): # 60 * 5s = 300s
+            # Wait based on configurable interval
+            interval_seconds = int(state.get("interval_minutes", 5.0) * 60)
+            for _ in range(int(interval_seconds / 5)):
                 if not state["active"]:
                     break
                 await asyncio.sleep(5)
@@ -435,6 +438,9 @@ async def start_monitoring(req: StartTrackingRequest):
     
     if req.timeout_hours < 1.0 or req.timeout_hours > 4.0:
         raise HTTPException(status_code=400, detail="Timeout must be between 1 and 4 hours.")
+        
+    if req.interval_minutes < 1.0 or req.interval_minutes > 5.0:
+        raise HTTPException(status_code=400, detail="Interval must be between 1 and 5 minutes.")
         
     if req.type not in ["circle", "polygon"]:
         raise HTTPException(status_code=400, detail="Type must be 'circle' or 'polygon'.")
@@ -456,6 +462,7 @@ async def start_monitoring(req: StartTrackingRequest):
     state["start_time"] = now
     state["end_time"] = end_time
     state["timeout_hours"] = req.timeout_hours
+    state["interval_minutes"] = req.interval_minutes
     state["type"] = req.type
     state["coordinates"] = req.coordinates
     state["checks_count"] = 0
@@ -464,7 +471,7 @@ async def start_monitoring(req: StartTrackingRequest):
     state["logs"] = []
     state["seen_strike_ids"] = set()
     
-    add_log(f"Started monitoring. Mode: {req.type.upper()}. Timeout: {req.timeout_hours} hours.")
+    add_log(f"Started monitoring. Mode: {req.type.upper()}. Timeout: {req.timeout_hours} hours. Interval: {req.interval_minutes} minutes.")
     
     # Send Discord notification about starting
     await send_discord_message({
@@ -536,6 +543,7 @@ async def get_status():
         "start_time": start_str,
         "end_time": end_str,
         "timeout_hours": state["timeout_hours"],
+        "interval_minutes": state.get("interval_minutes", 5.0),
         "type": state["type"],
         "coordinates": state["coordinates"],
         "time_remaining_seconds": time_remaining,
