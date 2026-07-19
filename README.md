@@ -8,7 +8,8 @@ Flash Finder is an interactive, real-time lightning monitoring web application. 
 
 ## ✨ Features
 
-*   **Dynamic Geofencing**: Draw circular regions (click-and-drag radius) or custom multi-vertex polygons (multi-click drawing tools) on a dark CartoDB Leaflet map.
+*   **Dynamic Geofencing**: Draw circular regions (click-and-drag radius), custom multi-vertex polygons, or **Camera FOV Wedges** (for landscape/night photographers planning compositions) on an inverted high-contrast OpenStreetMap Leaflet layer.
+*   **Camera FOV Wedge Settings**: Select a full-frame equivalent lens focal length (e.g. 14mm to 200mm) to set the wedge angle. Move the setup via camera origin (📷) or point the lens using subject focal target (🎯) coordinates on the map or sidebar inputs. Radius handles adjust foreground and background limits.
 *   **Real-Time Strike Tracking**: Direct backend integration with the XWeather API. Updates are polled every 5 minutes.
 *   **Dynamic Age Fading**: Map strike markers dynamically fade as they age:
     *   🔴 **0 - 15 minutes**: Vibrant danger-red (Active storm front).
@@ -24,7 +25,7 @@ Flash Finder is an interactive, real-time lightning monitoring web application. 
 ## 🛠️ Technology Stack
 
 *   **Frontend**: Vue 3, Vite, Leaflet.js (Custom SVG vector rendering for strikes and coordinates, bypassing image loader restrictions).
-*   **Backend**: FastAPI, Uvicorn, HTTPX (Custom geo-containment algorithms: Ray-Casting for polygons and Haversine formula for circles).
+*   **Backend**: FastAPI, Uvicorn, HTTPX (Custom geo-containment algorithms: Ray-Casting for polygons, Haversine formula for circles, and geodesic bearing angle boundaries for Camera FOV Wedges).
 *   **CI/CD**: GitHub Actions (Built for multi-platform architectures: `linux/amd64` and `linux/arm64`).
 
 ---

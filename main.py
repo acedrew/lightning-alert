@@ -132,6 +132,20 @@ def haversine_distance(lat1, lon1, lat2, lon2):
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return R * c
 
+# Calculate bearing in degrees from point 1 to point 2
+def calculate_bearing(lat1, lon1, lat2, lon2):
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    delta_lambda = math.radians(lon2 - lon1)
+    
+    y = math.sin(delta_lambda) * math.cos(phi2)
+    x = math.cos(phi1) * math.sin(phi2) - \
+        math.sin(phi1) * math.cos(phi2) * math.cos(delta_lambda)
+    
+    theta = math.atan2(y, x)
+    bearing = (math.degrees(theta) + 360) % 360
+    return bearing
+
 # Ray casting algorithm for polygon containment check
 def is_point_in_polygon(lat, lon, polygon):
     x, y = lon, lat
@@ -168,6 +182,22 @@ async def trigger_discord_alert(strikes: List[Dict[str, Any]]):
         embed_fields.append({
             "name": "Monitored Region",
             "value": f"Circle centered at `{center[0]:.4f}, {center[1]:.4f}`\nRadius: `{radius_km:.2f} km` (`{radius_km * 0.621371:.2f} miles`)",
+            "inline": False
+        })
+    elif state["type"] == "wedge":
+        origin = state["coordinates"]["origin"]
+        heading = state["coordinates"]["heading"]
+        fg_rad_km = state["coordinates"]["foreground_radius"] / 1000.0
+        bg_rad_km = state["coordinates"]["background_radius"] / 1000.0
+        fov_angle = state["coordinates"]["fov_angle"]
+        focal_length = state["coordinates"].get("focal_length", "N/A")
+        embed_fields.append({
+            "name": "Monitored Region (Camera FOV Wedge)",
+            "value": (
+                f"Origin: `{origin[0]:.4f}, {origin[1]:.4f}`\n"
+                f"Heading: `{heading:.1f}°` | Focal Length: `{focal_length}mm` (FOV: `{fov_angle:.1f}°`)\n"
+                f"Range: `{fg_rad_km:.2f} to {bg_rad_km:.2f} km` (`{fg_rad_km * 0.621371:.2f} to {bg_rad_km * 0.621371:.2f} miles`)"
+            ),
             "inline": False
         })
     else:
@@ -266,6 +296,13 @@ async def check_lightning():
         if state["type"] == "circle":
             center_lat, center_lon = state["coordinates"]["center"]
             radius_meters = state["coordinates"]["radius"]
+            radius_miles = radius_meters / 1609.34
+            # Enforce min 1 mile, max 60 miles for safety/caps
+            radius_miles_query = max(1.0, min(radius_miles, 60.0))
+        elif state["type"] == "wedge":
+            origin = state["coordinates"]["origin"]
+            center_lat, center_lon = origin[0], origin[1]
+            radius_meters = state["coordinates"]["background_radius"]
             radius_miles = radius_meters / 1609.34
             # Enforce min 1 mile, max 60 miles for safety/caps
             radius_miles_query = max(1.0, min(radius_miles, 60.0))
@@ -371,6 +408,19 @@ async def check_lightning():
             if state["type"] == "circle":
                 if dist_meters <= radius_meters:
                     is_inside = True
+            elif state["type"] == "wedge":
+                origin = state["coordinates"]["origin"]
+                fg_rad = state["coordinates"]["foreground_radius"]
+                bg_rad = state["coordinates"]["background_radius"]
+                heading = state["coordinates"]["heading"]
+                fov_angle = state["coordinates"]["fov_angle"]
+                if fg_rad <= dist_meters <= bg_rad:
+                    strike_bearing = calculate_bearing(origin[0], origin[1], strike_lat, strike_lon)
+                    start_angle = (heading - fov_angle / 2) % 360
+                    sweep = fov_angle
+                    diff = (strike_bearing - start_angle) % 360
+                    if diff <= sweep:
+                        is_inside = True
             else: # polygon
                 poly = state["coordinates"]["polygon"]
                 if is_point_in_polygon(strike_lat, strike_lon, poly):
@@ -444,8 +494,8 @@ async def start_monitoring(req: StartTrackingRequest):
     if req.interval_minutes < 1.0 or req.interval_minutes > 5.0:
         raise HTTPException(status_code=400, detail="Interval must be between 1 and 5 minutes.")
         
-    if req.type not in ["circle", "polygon"]:
-        raise HTTPException(status_code=400, detail="Type must be 'circle' or 'polygon'.")
+    if req.type not in ["circle", "polygon", "wedge"]:
+        raise HTTPException(status_code=400, detail="Type must be 'circle', 'polygon', or 'wedge'.")
         
     # Cancel existing task if any
     if tracking_task and not tracking_task.done():

@@ -5,7 +5,7 @@ import L from 'leaflet'
 const API_BASE = '' // relative path since we serve it from FastAPI, or http://localhost:8000 in dev
 
 // State variables
-const drawMode = ref(null) // null, 'circle', 'polygon'
+const drawMode = ref(null) // null, 'circle', 'polygon', 'wedge'
 const drawHelpText = ref('')
 const timeoutHours = ref(2.0)
 const checkIntervalMinutes = ref(5)
@@ -13,6 +13,38 @@ const activeTab = ref('strikes')
 const testingWebhook = ref(false)
 const localType = ref(null)
 const localCoordinates = ref(null)
+const focalLength = ref(50) // default 50mm
+const isDraggingWedge = ref(false)
+const wedgeOriginLat = ref(0.0)
+const wedgeOriginLng = ref(0.0)
+const wedgeFocalLat = ref(0.0)
+const wedgeFocalLng = ref(0.0)
+let wedgeFocalMarker = null // Target/focal marker pin
+
+// Draggable markers for wedge
+let wedgeOriginMarker = null
+let wedgeFgMarker = null
+let wedgeBgMarker = null
+let wedgeCenterline = null
+
+const commonFocalLengths = [
+  { val: 14, label: '14mm (Ultra Wide)' },
+  { val: 16, label: '16mm (Wide)' },
+  { val: 20, label: '20mm' },
+  { val: 24, label: '24mm (Standard Wide)' },
+  { val: 28, label: '28mm' },
+  { val: 35, label: '35mm (Classic)' },
+  { val: 50, label: '50mm (Normal)' },
+  { val: 70, label: '70mm' },
+  { val: 85, label: '85mm (Portrait)' },
+  { val: 105, label: '105mm' },
+  { val: 135, label: '135mm' },
+  { val: 200, label: '200mm (Telephoto)' },
+  { val: 300, label: '300mm' },
+  { val: 400, label: '400mm' },
+  { val: 500, label: '500mm' },
+  { val: 600, label: '600mm' }
+]
 
 const savingConfig = ref(false)
 const configStatus = ref({
@@ -64,6 +96,11 @@ const hasDrawnShape = computed(() => {
   return localCoordinates.value !== null
 })
 
+const calculatedFovAngleText = computed(() => {
+  const fov = 2 * Math.atan(18 / focalLength.value) * 180 / Math.PI
+  return fov.toFixed(1)
+})
+
 const estimatedApiCalls = computed(() => {
   const callsPerHour = 60 / checkIntervalMinutes.value
   return Math.round(timeoutHours.value * callsPerHour)
@@ -79,6 +116,12 @@ const shapeDetailsText = computed(() => {
   if (localType.value === 'circle') {
     const radiusKm = localCoordinates.value.radius / 1000.0
     return `Circle: ${radiusKm.toFixed(2)} km radius`
+  } else if (localType.value === 'wedge') {
+    const fgKm = localCoordinates.value.foreground_radius / 1000.0
+    const bgKm = localCoordinates.value.background_radius / 1000.0
+    const heading = localCoordinates.value.heading.toFixed(1)
+    const focal = localCoordinates.value.focal_length
+    return `Wedge: ${focal}mm | Heading ${heading}° | Range ${fgKm.toFixed(2)}-${bgKm.toFixed(2)} km`
   } else {
     const pointsCount = localCoordinates.value.polygon?.length || 0
     return `Polygon: ${pointsCount} vertices`
@@ -100,18 +143,30 @@ const sortedStrikes = computed(() => {
   return status.value.recent_strikes.slice().reverse()
 })
 
-// Methods
+let wasActive = false
+
 const fetchStatus = async () => {
   try {
     const resp = await fetch(`${API_BASE}/api/status`)
     if (resp.ok) {
       const data = await resp.json()
+      
+      const transitionToInactive = wasActive && !data.active
+      wasActive = data.active
+      
       status.value = data
       
-      // If the backend has an active session, sync local shape with the backend's active shape
-      if (data.active) {
-        localType.value = data.type
-        localCoordinates.value = data.coordinates
+      // Sync local shape with backend when active, initial load, or just stopped
+      if (data.active || !localCoordinates.value || transitionToInactive) {
+        if (data.type) {
+          localType.value = data.type
+        }
+        if (data.coordinates) {
+          localCoordinates.value = data.coordinates
+          if (data.type === 'wedge' && data.coordinates.focal_length) {
+            focalLength.value = data.coordinates.focal_length
+          }
+        }
         if (data.interval_minutes) {
           checkIntervalMinutes.value = data.interval_minutes
         }
@@ -135,11 +190,11 @@ onMounted(() => {
   // Custom Zoom Control on topright
   L.control.zoom({ position: 'topright' }).addTo(map)
 
-  // CartoDB Dark Matter tile layer
-  tileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-    subdomains: 'abcd',
-    maxZoom: 20
+  // OpenStreetMap standard tile layer (inverted via CSS for high-contrast visible road networks)
+  tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    subdomains: 'abc',
+    maxZoom: 19
   }).addTo(map)
 
   drawLayer = L.layerGroup().addTo(map)
@@ -189,6 +244,39 @@ const handleMapClick = (e) => {
     handleCircleDrawClick(e)
   } else if (drawMode.value === 'polygon') {
     handlePolygonDrawClick(e)
+  } else if (drawMode.value === 'wedge') {
+    handleWedgeDrawClick(e)
+  } else if (drawMode.value === 'wedge_origin') {
+    const lat = e.latlng.lat
+    const lon = e.latlng.lng
+    if (localType.value === 'wedge' && localCoordinates.value) {
+      const coords = localCoordinates.value
+      const latDiff = lat - coords.origin[0]
+      const lngDiff = lon - coords.origin[1]
+      coords.origin = [lat, lon]
+      if (coords.focal_point) {
+        coords.focal_point = [
+          coords.focal_point[0] + latDiff,
+          coords.focal_point[1] + lngDiff
+        ]
+      }
+      finalizeDraw()
+    } else {
+      initializeWedge(lat, lon)
+    }
+  } else if (drawMode.value === 'wedge_focal') {
+    const lat = e.latlng.lat
+    const lon = e.latlng.lng
+    if (localType.value === 'wedge' && localCoordinates.value) {
+      const coords = localCoordinates.value
+      coords.focal_point = [lat, lon]
+      const { bearing } = getDistanceAndBearing(
+        coords.origin[0], coords.origin[1],
+        coords.focal_point[0], coords.focal_point[1]
+      )
+      coords.heading = bearing
+      finalizeDraw()
+    }
   }
 }
 
@@ -340,6 +428,12 @@ const finalizeDraw = () => {
     drawLayer.removeLayer(tempGuideLine)
     tempGuideLine = null
   }
+  tempMarkers.forEach(m => drawLayer.removeLayer(m))
+  tempMarkers = []
+  if (tempShape) {
+    drawLayer.removeLayer(tempShape)
+    tempShape = null
+  }
   
   drawMode.value = null
   drawHelpText.value = ''
@@ -364,10 +458,13 @@ const cancelDrawing = () => {
     drawLayer.removeLayer(tempGuideLine)
     tempGuideLine = null
   }
+  
+  clearWedgeHandles()
 }
 
 const clearDrawnShape = () => {
   cancelDrawing()
+  clearWedgeHandles()
   localType.value = null
   localCoordinates.value = null
   drawLayer.clearLayers()
@@ -375,6 +472,447 @@ const clearDrawnShape = () => {
     stopMonitoring()
   }
 }
+
+// Wedge Specific Geodesic Helpers & Drawing Methods
+const getDestinationPoint = (lat, lng, bearing, distance) => {
+  const R = 6371000 // Earth's radius in meters
+  const latRad = (lat * Math.PI) / 180
+  const lngRad = (lng * Math.PI) / 180
+  const bearingRad = (bearing * Math.PI) / 180
+  const dByR = distance / R
+
+  const destLatRad = Math.asin(
+    Math.sin(latRad) * Math.cos(dByR) +
+    Math.cos(latRad) * Math.sin(dByR) * Math.cos(bearingRad)
+  )
+  const destLngRad = lngRad + Math.atan2(
+    Math.sin(bearingRad) * Math.sin(dByR) * Math.cos(latRad),
+    Math.cos(dByR) - Math.sin(latRad) * Math.sin(destLatRad)
+  )
+
+  return [
+    (destLatRad * 180) / Math.PI,
+    (destLngRad * 180) / Math.PI
+  ]
+}
+
+const getDistanceAndBearing = (lat1, lng1, lat2, lng2) => {
+  const R = 6371000
+  const phi1 = (lat1 * Math.PI) / 180
+  const phi2 = (lat2 * Math.PI) / 180
+  const deltaPhi = ((lat2 - lat1) * Math.PI) / 180
+  const deltaLambda = ((lng2 - lng1) * Math.PI) / 180
+
+  const a = Math.sin(deltaPhi / 2) ** 2 +
+            Math.cos(phi1) * Math.cos(phi2) *
+            Math.sin(deltaLambda / 2) ** 2
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  const distance = R * c
+
+  const y = Math.sin(deltaLambda) * Math.cos(phi2)
+  const x = Math.cos(phi1) * Math.sin(phi2) -
+            Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLambda)
+  const bearing = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360
+
+  return { distance, bearing }
+}
+
+const getWedgePolygonPoints = (lat, lng, heading, fovAngle, fgRad, bgRad) => {
+  const points = []
+  const steps = 30
+  const halfFov = fovAngle / 2
+
+  // Outer arc
+  for (let i = 0; i <= steps; i++) {
+    const angle = heading - halfFov + (fovAngle * i) / steps
+    points.push(getDestinationPoint(lat, lng, angle, bgRad))
+  }
+
+  // Inner arc/point
+  if (fgRad > 0) {
+    for (let i = steps; i >= 0; i--) {
+      const angle = heading - halfFov + (fovAngle * i) / steps
+      points.push(getDestinationPoint(lat, lng, angle, fgRad))
+    }
+  } else {
+    points.push([lat, lng])
+  }
+
+  return points
+}
+
+const clearWedgeHandles = () => {
+  if (wedgeOriginMarker) {
+    drawLayer.removeLayer(wedgeOriginMarker)
+    wedgeOriginMarker = null
+  }
+  if (wedgeFgMarker) {
+    drawLayer.removeLayer(wedgeFgMarker)
+    wedgeFgMarker = null
+  }
+  if (wedgeBgMarker) {
+    drawLayer.removeLayer(wedgeBgMarker)
+    wedgeBgMarker = null
+  }
+  if (wedgeFocalMarker) {
+    drawLayer.removeLayer(wedgeFocalMarker)
+    wedgeFocalMarker = null
+  }
+  if (wedgeCenterline) {
+    drawLayer.removeLayer(wedgeCenterline)
+    wedgeCenterline = null
+  }
+}
+
+const updateWedgeHandles = () => {
+  if (localType.value !== 'wedge' || !localCoordinates.value || status.value.active) {
+    clearWedgeHandles()
+    return
+  }
+
+  if (isDraggingWedge.value) {
+    return
+  }
+
+  const coords = localCoordinates.value
+  const origin = coords.origin
+  const heading = coords.heading
+  const fgRad = coords.foreground_radius
+  const bgRad = coords.background_radius
+
+  // Setup default focal point if missing
+  if (!coords.focal_point) {
+    coords.focal_point = getDestinationPoint(origin[0], origin[1], heading, bgRad / 2)
+  }
+  const focalPos = coords.focal_point
+
+  const fgPos = getDestinationPoint(origin[0], origin[1], heading, fgRad)
+  const bgPos = getDestinationPoint(origin[0], origin[1], heading, bgRad)
+
+  // 1. Origin Marker (Translates the entire wedge)
+  if (!wedgeOriginMarker) {
+    wedgeOriginMarker = L.marker(origin, {
+      draggable: true,
+      icon: L.divIcon({
+        className: 'custom-wedge-handle',
+        html: '<div class="wedge-handle-origin" title="Drag to move camera location">📷</div>',
+        iconSize: [24, 24],
+        iconAnchor: [12, 12]
+      })
+    }).addTo(drawLayer)
+
+    wedgeOriginMarker.on('drag', (e) => {
+      isDraggingWedge.value = true
+      const newLatlng = e.target.getLatLng()
+      const latDiff = newLatlng.lat - coords.origin[0]
+      const lngDiff = newLatlng.lng - coords.origin[1]
+      
+      coords.origin = [newLatlng.lat, newLatlng.lng]
+      if (coords.focal_point) {
+        coords.focal_point = [
+          coords.focal_point[0] + latDiff,
+          coords.focal_point[1] + lngDiff
+        ]
+      }
+      
+      // Update coordinates inputs refs
+      wedgeOriginLat.value = Number(coords.origin[0].toFixed(6))
+      wedgeOriginLng.value = Number(coords.origin[1].toFixed(6))
+      if (coords.focal_point) {
+        wedgeFocalLat.value = Number(coords.focal_point[0].toFixed(6))
+        wedgeFocalLng.value = Number(coords.focal_point[1].toFixed(6))
+      }
+      
+      const pts = getWedgePolygonPoints(
+        coords.origin[0], coords.origin[1],
+        coords.heading, coords.fov_angle,
+        coords.foreground_radius, coords.background_radius
+      )
+      if (renderedActiveShape) {
+        renderedActiveShape.setLatLngs(pts)
+      }
+      
+      const newFgPos = getDestinationPoint(coords.origin[0], coords.origin[1], coords.heading, coords.foreground_radius)
+      const newBgPos = getDestinationPoint(coords.origin[0], coords.origin[1], coords.heading, coords.background_radius)
+      
+      if (wedgeFgMarker) wedgeFgMarker.setLatLng(newFgPos)
+      if (wedgeBgMarker) wedgeBgMarker.setLatLng(newBgPos)
+      if (wedgeFocalMarker) wedgeFocalMarker.setLatLng(coords.focal_point)
+      if (wedgeCenterline) wedgeCenterline.setLatLngs([coords.origin, newBgPos])
+    })
+
+    wedgeOriginMarker.on('dragend', () => {
+      isDraggingWedge.value = false
+    })
+  } else {
+    wedgeOriginMarker.setLatLng(origin)
+  }
+
+  // 2. Focal Point Marker (Rotates/re-headings the lens view)
+  if (!wedgeFocalMarker) {
+    wedgeFocalMarker = L.marker(focalPos, {
+      draggable: true,
+      icon: L.divIcon({
+        className: 'custom-wedge-handle',
+        html: '<div class="wedge-handle-focal" title="Drag to rotate wedge / point lens">🎯</div>',
+        iconSize: [20, 20],
+        iconAnchor: [10, 10]
+      })
+    }).addTo(drawLayer)
+
+    wedgeFocalMarker.on('drag', (e) => {
+      isDraggingWedge.value = true
+      const dragLatlng = e.target.getLatLng()
+      coords.focal_point = [dragLatlng.lat, dragLatlng.lng]
+      
+      wedgeFocalLat.value = Number(dragLatlng.lat.toFixed(6))
+      wedgeFocalLng.value = Number(dragLatlng.lng.toFixed(6))
+
+      const { bearing } = getDistanceAndBearing(
+        coords.origin[0], coords.origin[1],
+        dragLatlng.lat, dragLatlng.lng
+      )
+      coords.heading = bearing
+
+      const pts = getWedgePolygonPoints(
+        coords.origin[0], coords.origin[1],
+        coords.heading, coords.fov_angle,
+        coords.foreground_radius, coords.background_radius
+      )
+      if (renderedActiveShape) {
+        renderedActiveShape.setLatLngs(pts)
+      }
+
+      // Rotate other centerline markers
+      const newFgPos = getDestinationPoint(coords.origin[0], coords.origin[1], coords.heading, coords.foreground_radius)
+      if (wedgeFgMarker) wedgeFgMarker.setLatLng(newFgPos)
+      
+      const newBgPos = getDestinationPoint(coords.origin[0], coords.origin[1], coords.heading, coords.background_radius)
+      if (wedgeBgMarker) wedgeBgMarker.setLatLng(newBgPos)
+      
+      if (wedgeCenterline) wedgeCenterline.setLatLngs([coords.origin, newBgPos])
+    })
+
+    wedgeFocalMarker.on('dragend', () => {
+      isDraggingWedge.value = false
+    })
+  } else {
+    wedgeFocalMarker.setLatLng(focalPos)
+  }
+
+  // 3. Foreground Marker (Inner Radius controller)
+  if (!wedgeFgMarker) {
+    wedgeFgMarker = L.marker(fgPos, {
+      draggable: true,
+      icon: L.divIcon({
+        className: 'custom-wedge-handle',
+        html: '<div class="wedge-handle-fg" title="Drag to adjust inner radius"></div>',
+        iconSize: [14, 14],
+        iconAnchor: [7, 7]
+      })
+    }).addTo(drawLayer)
+
+    wedgeFgMarker.on('drag', (e) => {
+      isDraggingWedge.value = true
+      const dragLatlng = e.target.getLatLng()
+      const { distance } = getDistanceAndBearing(
+        coords.origin[0], coords.origin[1],
+        dragLatlng.lat, dragLatlng.lng
+      )
+      
+      const newFgRad = Math.max(0, Math.min(distance, coords.background_radius - 100))
+      coords.foreground_radius = newFgRad
+      
+      const pts = getWedgePolygonPoints(
+        coords.origin[0], coords.origin[1],
+        coords.heading, coords.fov_angle,
+        coords.foreground_radius, coords.background_radius
+      )
+      if (renderedActiveShape) {
+        renderedActiveShape.setLatLngs(pts)
+      }
+      
+      const newFgPos = getDestinationPoint(coords.origin[0], coords.origin[1], coords.heading, coords.foreground_radius)
+      wedgeFgMarker.setLatLng(newFgPos)
+    })
+
+    wedgeFgMarker.on('dragend', () => {
+      isDraggingWedge.value = false
+      const newFgPos = getDestinationPoint(coords.origin[0], coords.origin[1], coords.heading, coords.foreground_radius)
+      if (wedgeFgMarker) wedgeFgMarker.setLatLng(newFgPos)
+    })
+  } else {
+    wedgeFgMarker.setLatLng(fgPos)
+  }
+
+  // 4. Background Marker (Outer Radius controller)
+  if (!wedgeBgMarker) {
+    wedgeBgMarker = L.marker(bgPos, {
+      draggable: true,
+      icon: L.divIcon({
+        className: 'custom-wedge-handle',
+        html: '<div class="wedge-handle-bg" title="Drag to adjust outer radius"></div>',
+        iconSize: [16, 16],
+        iconAnchor: [8, 8]
+      })
+    }).addTo(drawLayer)
+
+    wedgeBgMarker.on('drag', (e) => {
+      isDraggingWedge.value = true
+      const dragLatlng = e.target.getLatLng()
+      const { distance } = getDistanceAndBearing(
+        coords.origin[0], coords.origin[1],
+        dragLatlng.lat, dragLatlng.lng
+      )
+      
+      const newBgRad = Math.max(coords.foreground_radius + 100, Math.min(distance, 100000))
+      coords.background_radius = newBgRad
+      
+      const pts = getWedgePolygonPoints(
+        coords.origin[0], coords.origin[1],
+        coords.heading, coords.fov_angle,
+        coords.foreground_radius, coords.background_radius
+      )
+      if (renderedActiveShape) {
+        renderedActiveShape.setLatLngs(pts)
+      }
+      
+      const newBgPos = getDestinationPoint(coords.origin[0], coords.origin[1], coords.heading, coords.background_radius)
+      wedgeBgMarker.setLatLng(newBgPos)
+      
+      if (wedgeCenterline) wedgeCenterline.setLatLngs([coords.origin, newBgPos])
+    })
+
+    wedgeBgMarker.on('dragend', () => {
+      isDraggingWedge.value = false
+      const newBgPos = getDestinationPoint(coords.origin[0], coords.origin[1], coords.heading, coords.background_radius)
+      if (wedgeBgMarker) wedgeBgMarker.setLatLng(newBgPos)
+    })
+  } else {
+    wedgeBgMarker.setLatLng(bgPos)
+  }
+
+  // 5. Centerline
+  if (!wedgeCenterline) {
+    wedgeCenterline = L.polyline([origin, bgPos], {
+      color: 'var(--ace-border-strong)',
+      dashArray: '4, 6',
+      weight: 2,
+      interactive: false
+    }).addTo(drawLayer)
+  } else {
+    wedgeCenterline.setLatLngs([origin, bgPos])
+  }
+}
+
+// Wedge drawing setup
+const startDrawingWedge = () => {
+  cancelDrawing()
+  drawMode.value = 'wedge'
+  drawHelpText.value = 'Click on the map to place the camera location pin, or use the button below to use your current location.'
+  tempPoints = []
+}
+
+const placeWedgeAtCurrentLocation = () => {
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude
+        const lon = position.coords.longitude
+        initializeWedge(lat, lon)
+      },
+      (error) => {
+        alert('Geolocation failed: ' + error.message)
+      }
+    )
+  } else {
+    alert('Geolocation is not supported by your browser.')
+  }
+}
+
+const handleWedgeDrawClick = (e) => {
+  const lat = e.latlng.lat
+  const lon = e.latlng.lng
+  initializeWedge(lat, lon)
+}
+
+const initializeWedge = (lat, lon) => {
+  localType.value = 'wedge'
+  const fovAngle = 2 * Math.atan(18 / focalLength.value) * 180 / Math.PI
+  const heading = 0.0
+  const bgRad = 10000.0
+  const fp = getDestinationPoint(lat, lon, heading, bgRad / 2)
+  localCoordinates.value = {
+    origin: [lat, lon],
+    heading: heading,
+    fov_angle: fovAngle,
+    focal_length: focalLength.value,
+    foreground_radius: 1000.0,
+    background_radius: bgRad,
+    focal_point: fp
+  }
+  map.panTo([lat, lon])
+  finalizeDraw()
+}
+
+const syncWedgeInputRefs = () => {
+  if (localType.value === 'wedge' && localCoordinates.value && !isDraggingWedge.value) {
+    const coords = localCoordinates.value
+    wedgeOriginLat.value = Number(coords.origin[0].toFixed(6))
+    wedgeOriginLng.value = Number(coords.origin[1].toFixed(6))
+    
+    if (coords.focal_point) {
+      wedgeFocalLat.value = Number(coords.focal_point[0].toFixed(6))
+      wedgeFocalLng.value = Number(coords.focal_point[1].toFixed(6))
+    } else {
+      const fp = getDestinationPoint(coords.origin[0], coords.origin[1], coords.heading, coords.background_radius / 2)
+      coords.focal_point = fp
+      wedgeFocalLat.value = Number(fp[0].toFixed(6))
+      wedgeFocalLng.value = Number(fp[1].toFixed(6))
+    }
+  }
+}
+
+const updateWedgeFromInputs = () => {
+  if (localType.value === 'wedge' && localCoordinates.value) {
+    const coords = localCoordinates.value
+    coords.origin = [wedgeOriginLat.value, wedgeOriginLng.value]
+    coords.focal_point = [wedgeFocalLat.value, wedgeFocalLng.value]
+    
+    // Recalculate heading
+    const { bearing } = getDistanceAndBearing(
+      coords.origin[0], coords.origin[1],
+      coords.focal_point[0], coords.focal_point[1]
+    )
+    coords.heading = bearing
+    
+    updateMapFromStatus()
+  }
+}
+
+const pickWedgeOriginOnMap = () => {
+  cancelDrawing()
+  drawMode.value = 'wedge_origin'
+  drawHelpText.value = 'Click on the map to set the camera origin (location pin).'
+}
+
+const pickWedgeFocalOnMap = () => {
+  cancelDrawing()
+  drawMode.value = 'wedge_focal'
+  drawHelpText.value = 'Click on the map to set the focal target point.'
+}
+
+// Watcher for focalLength
+watch(focalLength, (newVal) => {
+  if (localType.value === 'wedge' && localCoordinates.value) {
+    localCoordinates.value.focal_length = newVal
+    const fovAngle = 2 * Math.atan(18 / newVal) * 180 / Math.PI
+    localCoordinates.value.fov_angle = fovAngle
+    
+    // Update focal point if heading changed (not changed here, but redraw wedge)
+    updateMapFromStatus()
+  }
+})
 
 // Style helper to age-fade strike markers
 const getMarkerStyleForStrike = (strike) => {
@@ -473,10 +1011,7 @@ const updateMapFromStatus = () => {
     renderedActiveShape = null
   }
 
-  // Clear drawing markers if not drawing
-  if (!drawMode.value) {
-    drawLayer.clearLayers()
-  }
+
 
   if (localCoordinates.value) {
     const isActive = status.value.active
@@ -484,6 +1019,7 @@ const updateMapFromStatus = () => {
     const fillColor = isActive ? 'var(--ace-primary)' : 'var(--ace-secondary)'
     
     if (localType.value === 'circle') {
+      clearWedgeHandles()
       const center = localCoordinates.value.center
       const radius = localCoordinates.value.radius
       renderedActiveShape = L.circle(center, {
@@ -498,6 +1034,7 @@ const updateMapFromStatus = () => {
       staticFitBoundOnce(renderedActiveShape.getBounds())
       
     } else if (localType.value === 'polygon') {
+      clearWedgeHandles()
       const poly = localCoordinates.value.polygon
       renderedActiveShape = L.polygon(poly, {
         color: strokeColor,
@@ -508,7 +1045,27 @@ const updateMapFromStatus = () => {
       }).addTo(drawLayer)
       
       staticFitBoundOnce(renderedActiveShape.getBounds())
+    } else if (localType.value === 'wedge') {
+      const coords = localCoordinates.value
+      const pts = getWedgePolygonPoints(
+        coords.origin[0], coords.origin[1],
+        coords.heading, coords.fov_angle,
+        coords.foreground_radius, coords.background_radius
+      )
+      renderedActiveShape = L.polygon(pts, {
+        color: strokeColor,
+        weight: 3,
+        fillColor: fillColor,
+        fillOpacity: 0.15,
+        interactive: false
+      }).addTo(drawLayer)
+      
+      updateWedgeHandles()
+      
+      staticFitBoundOnce(renderedActiveShape.getBounds())
     }
+  } else {
+    clearWedgeHandles()
   }
 
   // 2. Render recent strikes
@@ -558,6 +1115,9 @@ const updateMapFromStatus = () => {
   
   if (strikeGroup && typeof strikeGroup.bringToFront === 'function') {
     strikeGroup.bringToFront()
+  }
+  if (localType.value === 'wedge') {
+    syncWedgeInputRefs()
   }
 }
 
@@ -719,6 +1279,14 @@ const stopMonitoring = async () => {
               ⬡ Polygon
             </button>
             <button 
+              class="ace-button ace-button--sm"
+              :class="drawMode === 'wedge' ? 'ace-button--secondary' : 'ace-button--ghost'"
+              :disabled="status.active"
+              @click="startDrawingWedge"
+            >
+              📐 Wedge
+            </button>
+            <button 
               class="ace-button ace-button--sm ace-button--danger"
               v-if="hasDrawnShape"
               :disabled="status.active"
@@ -735,6 +1303,116 @@ const stopMonitoring = async () => {
             >
               ✓ Complete Polygon
             </button>
+          </div>
+
+          <div v-if="drawMode === 'wedge'" class="complete-btn-container">
+            <button 
+              class="ace-button ace-button--sm ace-button--primary ace-button--block"
+              @click="placeWedgeAtCurrentLocation"
+            >
+              📍 Place at Current Location
+            </button>
+          </div>
+
+          <div v-if="localType === 'wedge' || drawMode === 'wedge'" class="wedge-settings" style="margin-top: 0.8rem; border-top: 1px dashed var(--ace-border-strong); padding-top: 0.8rem; display: flex; flex-direction: column; gap: 0.8rem;">
+            <!-- Focal Length -->
+            <div class="ace-field">
+              <label class="ace-field__label">Lens Focal Length (Full Frame Eq.)</label>
+              <div class="focal-length-container">
+                <select v-model.number="focalLength" :disabled="status.active" class="ace-select">
+                  <option v-for="fl in commonFocalLengths" :key="fl.val" :value="fl.val">
+                    {{ fl.label }}
+                  </option>
+                </select>
+                <span class="fov-angle-display">{{ calculatedFovAngleText }}° FOV</span>
+              </div>
+              <div class="ace-field__hint">The focal length determines the horizontal field of view angle.</div>
+            </div>
+
+            <!-- Coordinate inputs -->
+            <div class="wedge-coordinates-panel">
+              <!-- Origin / Camera Location -->
+              <div class="coordinate-group">
+                <div class="coordinate-header">
+                  <label class="ace-field__label">📷 Camera Location (Origin)</label>
+                  <button 
+                    class="ace-button ace-button--ghost ace-button--sm"
+                    :class="drawMode === 'wedge_origin' ? 'ace-button--secondary' : ''"
+                    :disabled="status.active"
+                    @click="pickWedgeOriginOnMap"
+                    type="button"
+                    style="padding: 0.15rem 0.4rem; font-size: 0.72rem; min-height: auto;"
+                  >
+                    📍 Map Pick
+                  </button>
+                </div>
+                <div class="coordinate-inputs">
+                  <div class="coordinate-input-wrapper">
+                    <span class="coord-label">Lat</span>
+                    <input 
+                      type="number" 
+                      step="0.000001" 
+                      v-model.number="wedgeOriginLat" 
+                      @change="updateWedgeFromInputs"
+                      :disabled="status.active"
+                      class="ace-input ace-input--sm"
+                    />
+                  </div>
+                  <div class="coordinate-input-wrapper">
+                    <span class="coord-label">Lng</span>
+                    <input 
+                      type="number" 
+                      step="0.000001" 
+                      v-model.number="wedgeOriginLng" 
+                      @change="updateWedgeFromInputs"
+                      :disabled="status.active"
+                      class="ace-input ace-input--sm"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <!-- Focal Point / Target Location -->
+              <div class="coordinate-group" style="margin-top: 0.6rem;">
+                <div class="coordinate-header">
+                  <label class="ace-field__label">🎯 Subject Focal Point</label>
+                  <button 
+                    class="ace-button ace-button--ghost ace-button--sm"
+                    :class="drawMode === 'wedge_focal' ? 'ace-button--secondary' : ''"
+                    :disabled="status.active"
+                    @click="pickWedgeFocalOnMap"
+                    type="button"
+                    style="padding: 0.15rem 0.4rem; font-size: 0.72rem; min-height: auto;"
+                  >
+                    📍 Map Pick
+                  </button>
+                </div>
+                <div class="coordinate-inputs">
+                  <div class="coordinate-input-wrapper">
+                    <span class="coord-label">Lat</span>
+                    <input 
+                      type="number" 
+                      step="0.000001" 
+                      v-model.number="wedgeFocalLat" 
+                      @change="updateWedgeFromInputs"
+                      :disabled="status.active"
+                      class="ace-input ace-input--sm"
+                    />
+                  </div>
+                  <div class="coordinate-input-wrapper">
+                    <span class="coord-label">Lng</span>
+                    <input 
+                      type="number" 
+                      step="0.000001" 
+                      v-model.number="wedgeFocalLng" 
+                      @change="updateWedgeFromInputs"
+                      :disabled="status.active"
+                      class="ace-input ace-input--sm"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
           
           <div v-if="drawHelpText" class="help-text">
@@ -1031,10 +1709,11 @@ const stopMonitoring = async () => {
               <section class="docs-section">
                 <h4>🎯 How to Use the Interface</h4>
                 <ul>
-                  <li><strong>Define Detection Area:</strong> Select ⭕ <strong>Circle</strong> or ⬡ <strong>Polygon</strong>.
+                  <li><strong>Define Detection Area:</strong> Select ⭕ <strong>Circle</strong>, ⬡ <strong>Polygon</strong>, or 📐 <strong>Wedge</strong>.
                     <ul>
                       <li><em>Circle:</em> Click on the map to place the center, move the mouse to choose the radius, and click again to lock it.</li>
                       <li><em>Polygon:</em> Click on the map to place vertices (at least 3). Click the first point (lime dot) or click <strong>✓ Complete Polygon</strong> in the sidebar to close the shape.</li>
+                      <li><em>Wedge (Camera FOV):</em> Click on the map or click <strong>📍 Place at Current Location</strong> to initialize the camera position. Once placed, select your full-frame equivalent focal length from the sidebar to set the horizontal angle of view. Drag the camera marker 📷 to move the origin, drag the inner circle to adjust the foreground radius, and drag the outer circle to sweep the heading and background radius.</li>
                     </ul>
                   </li>
                   <li><strong>Configure Duration:</strong> Use the slider to set a timeout from 1 to 4 hours. The interface shows the estimated API call count and monthly free limit percentage.</li>
@@ -1552,5 +2231,168 @@ const stopMonitoring = async () => {
   font-size: 0.74rem;
   color: var(--ace-text);
   white-space: nowrap;
+}
+
+/* Wedge handle custom styles */
+.focal-length-container {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin-top: 0.3rem;
+}
+
+.fov-angle-display {
+  font-weight: 700;
+  color: var(--ace-primary);
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.ace-select {
+  background: var(--ace-bg-panel);
+  color: var(--ace-text);
+  border: 1px solid var(--ace-border-strong);
+  border-radius: var(--ace-radius-sm);
+  padding: 0.5rem;
+  font-family: var(--ace-font-body);
+  font-size: 0.85rem;
+  width: 100%;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.ace-select:focus {
+  border-color: var(--ace-primary);
+}
+
+.ace-select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Custom styles for leaflet divIcon elements (avoid default white background / borders) */
+.custom-wedge-handle {
+  background: transparent !important;
+  border: none !important;
+}
+
+.wedge-handle-origin {
+  background: var(--ace-secondary);
+  color: white;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  box-shadow: 0 0 6px rgba(0,0,0,0.6);
+  cursor: grab;
+}
+
+.wedge-handle-origin:active {
+  cursor: grabbing;
+}
+
+.wedge-handle-fg {
+  background: #f69d1d;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid white;
+  box-shadow: 0 0 5px rgba(0,0,0,0.5);
+  cursor: grab;
+}
+
+.wedge-handle-bg {
+  background: var(--ace-primary);
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid white;
+  box-shadow: 0 0 5px rgba(0,0,0,0.5);
+  cursor: grab;
+}
+
+.wedge-coordinates-panel {
+  display: flex;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.015);
+  border: 1px solid var(--ace-border-strong);
+  border-radius: var(--ace-radius-md);
+  padding: 0.8rem;
+  gap: 0.5rem;
+}
+
+.coordinate-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.coordinate-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.2rem;
+}
+
+.coordinate-header .ace-field__label {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--ace-text-subtle);
+}
+
+.coordinate-inputs {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.coordinate-input-wrapper {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--ace-bg-panel);
+  border: 1px solid var(--ace-border-strong);
+  border-radius: var(--ace-radius-sm);
+  padding-left: 0.45rem;
+}
+
+.coord-label {
+  font-size: 0.72rem;
+  color: var(--ace-text-muted);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.coordinate-input-wrapper .ace-input--sm {
+  border: none !important;
+  background: transparent !important;
+  padding: 0.35rem 0.3rem;
+  font-size: 0.8rem;
+  width: 100%;
+}
+
+.wedge-handle-focal {
+  background: var(--ace-danger);
+  color: white;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  box-shadow: 0 0 6px rgba(0,0,0,0.6);
+  cursor: grab;
+}
+
+.wedge-handle-focal:active {
+  cursor: grabbing;
 }
 </style>

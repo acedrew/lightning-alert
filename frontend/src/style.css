@@ -10,6 +10,10 @@
   background: var(--ace-bg-elevated) !important;
 }
 
+.leaflet-tile {
+  filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(1.1) saturate(1.1);
+}
+
 /* Customize Leaflet controls to match dark theme */
 .leaflet-bar a, .leaflet-bar a:hover {
   background-color: var(--ace-bg-panel) !important;
