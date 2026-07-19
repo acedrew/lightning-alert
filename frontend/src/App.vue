@@ -382,32 +382,80 @@ const getMarkerStyleForStrike = (strike) => {
   const now = Date.now()
   const ageMinutes = (now - strikeTime) / 60000
   
-  if (ageMinutes <= 15) {
-    // Very recent (0-15m): vibrant danger red with high opacity
-    return {
-      radius: 9,
-      color: 'var(--ace-danger)',
-      fillColor: 'var(--ace-danger)',
-      fillOpacity: 0.9,
-      weight: 2
-    }
-  } else if (ageMinutes <= 60) {
-    // Recent (15-60m): warm orange, medium opacity
-    return {
-      radius: 7,
-      color: '#f69d1d',
-      fillColor: '#f69d1d',
-      fillOpacity: 0.55,
-      weight: 1.5
+  const isInside = strike.is_inside !== false
+  
+  if (isInside) {
+    if (ageMinutes <= 1) {
+      // Active Front (0-1m): vibrant danger red with high opacity
+      return {
+        radius: 9,
+        color: 'var(--ace-danger)',
+        fillColor: 'var(--ace-danger)',
+        fillOpacity: 0.9,
+        weight: 2
+      }
+    } else if (ageMinutes <= 15) {
+      // Recent (1-15m): warm orange, medium opacity
+      return {
+        radius: 7,
+        color: '#f69d1d',
+        fillColor: '#f69d1d',
+        fillOpacity: 0.65,
+        weight: 1.5
+      }
+    } else if (ageMinutes <= 30) {
+      // Intermediate (15-30m): dark/faded orange, lower opacity
+      return {
+        radius: 6,
+        color: '#b06b0d',
+        fillColor: '#b06b0d',
+        fillOpacity: 0.45,
+        weight: 1
+      }
+    } else {
+      // Historical (>30m): small, faded gray, low opacity
+      return {
+        radius: 5,
+        color: 'var(--ace-text-subtle)',
+        fillColor: 'var(--ace-text-subtle)',
+        fillOpacity: 0.25,
+        weight: 1
+      }
     }
   } else {
-    // Old (>60m): small, faded gray, low opacity
-    return {
-      radius: 5,
-      color: 'var(--ace-text-subtle)',
-      fillColor: 'var(--ace-text-subtle)',
-      fillOpacity: 0.25,
-      weight: 1
+    // Outside the target area (Buffer strikes)
+    if (ageMinutes <= 1) {
+      return {
+        radius: 8,
+        color: 'var(--ace-secondary)',
+        fillColor: 'var(--ace-secondary)',
+        fillOpacity: 0.8,
+        weight: 1.5
+      }
+    } else if (ageMinutes <= 15) {
+      return {
+        radius: 6,
+        color: 'var(--ace-secondary)',
+        fillColor: 'var(--ace-secondary)',
+        fillOpacity: 0.5,
+        weight: 1
+      }
+    } else if (ageMinutes <= 30) {
+      return {
+        radius: 5,
+        color: 'var(--ace-secondary)',
+        fillColor: 'var(--ace-secondary)',
+        fillOpacity: 0.3,
+        weight: 0.8
+      }
+    } else {
+      return {
+        radius: 4,
+        color: 'var(--ace-text-subtle)',
+        fillColor: 'var(--ace-text-subtle)',
+        fillOpacity: 0.15,
+        weight: 0.5
+      }
     }
   }
 }
@@ -848,15 +896,19 @@ const stopMonitoring = async () => {
           <div class="legend-items">
             <div class="legend-item-style">
               <span class="legend-dot dot-danger"></span>
-              <span class="legend-text">Active Front (&lt; 15m)</span>
+              <span class="legend-text">Active Front (&lt; 1m)</span>
             </div>
             <div class="legend-item-style">
               <span class="legend-dot dot-warning"></span>
-              <span class="legend-text">Recent (&lt; 60m)</span>
+              <span class="legend-text">Recent (&lt; 15m)</span>
+            </div>
+            <div class="legend-item-style">
+              <span class="legend-dot dot-transition"></span>
+              <span class="legend-text">Intermediate (&lt; 30m)</span>
             </div>
             <div class="legend-item-style">
               <span class="legend-dot dot-muted"></span>
-              <span class="legend-text">Historical (&gt; 60m)</span>
+              <span class="legend-text">Historical (&gt; 30m)</span>
             </div>
             <div class="legend-item-style" style="border-top: 1px solid rgba(255, 255, 255, 0.05); padding-top: 0.3rem; margin-top: 0.1rem;">
               <span class="legend-dot dot-info"></span>
@@ -983,10 +1035,11 @@ const stopMonitoring = async () => {
                   <li><strong>Start Monitoring:</strong> Click <strong>▶ Start Monitoring</strong>. Flash Finder will query XWeather every 5 minutes. If strikes fall inside the region, a rich Discord alert with map links is sent.</li>
                   <li><strong>Visual Age-Fading & Legend:</strong> Strikes are color-coded based on their age in minutes to track storm fronts:
                     <ul>
-                      <li>🔴 <strong>Active Front (&lt; 15 mins)</strong>: Vibrant neon-red circles.</li>
-                      <li>🟠 <strong>Recent (&lt; 60 mins)</strong>: Warm orange circles.</li>
-                      <li>⚪ <strong>Historical (&gt; 60 mins)</strong>: Faded gray circles.</li>
-                      <li>🔵 <strong>Encroaching Buffer (Outside target area)</strong>: Neon-cyan circles showing storm proximity.</li>
+                        <li>🔴 <strong>Active Front (&lt; 1 min)</strong>: Vibrant neon-red circles.</li>
+                        <li>🟠 <strong>Recent (&lt; 15 mins)</strong>: Warm orange circles.</li>
+                        <li>🟡 <strong>Intermediate (&lt; 30 mins)</strong>: Faded/dark orange circles.</li>
+                        <li>⚪ <strong>Historical (&gt; 30 mins)</strong>: Faded gray circles.</li>
+                        <li>🔵 <strong>Encroaching Buffer (Outside target area)</strong>: Neon-cyan circles showing storm proximity.</li>
                     </ul>
                   </li>
                 </ul>
@@ -1472,6 +1525,11 @@ const stopMonitoring = async () => {
 .dot-warning {
   background: #f69d1d;
   box-shadow: 0 0 6px #f69d1d;
+}
+
+.dot-transition {
+  background: #b06b0d;
+  box-shadow: 0 0 5px #b06b0d;
 }
 
 .dot-info {
