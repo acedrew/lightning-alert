@@ -362,45 +362,50 @@ async def check_lightning():
             if strike_lat is None or strike_lon is None:
                 continue
 
+            dist_meters = haversine_distance(strike_lat, strike_lon, center_lat, center_lon)
             is_inside = False
-            dist_meters = None
             if state["type"] == "circle":
-                dist_meters = haversine_distance(strike_lat, strike_lon, center_lat, center_lon)
                 if dist_meters <= radius_meters:
                     is_inside = True
             else: # polygon
                 poly = state["coordinates"]["polygon"]
                 if is_point_in_polygon(strike_lat, strike_lon, poly):
                     is_inside = True
-                    dist_meters = haversine_distance(strike_lat, strike_lon, center_lat, center_lon)
 
-            if is_inside:
-                strike_info = {
-                    "id": strike_id,
-                    "lat": strike_lat,
-                    "lon": strike_lon,
-                    "type": strike.get("type", "Unknown"),
-                    "intensity": strike.get("intensity"),
-                    "dateTimeISO": strike.get("dateTimeISO"),
-                    "timestamp": strike.get("timestamp"),
-                    "distance_meters": dist_meters,
-                    "detected_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
-                }
-                detected_in_this_run.append(strike_info)
-                state["seen_strike_ids"].add(strike_id)
-                # Keep cache bounded
-                if len(state["seen_strike_ids"]) > 5000:
-                    state["seen_strike_ids"] = set(list(state["seen_strike_ids"])[-2500:])
+            strike_info = {
+                "id": strike_id,
+                "lat": strike_lat,
+                "lon": strike_lon,
+                "type": strike.get("type", "Unknown"),
+                "intensity": strike.get("intensity"),
+                "dateTimeISO": strike.get("dateTimeISO"),
+                "timestamp": strike.get("timestamp"),
+                "distance_meters": dist_meters,
+                "is_inside": is_inside,
+                "detected_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+            }
+            
+            detected_in_this_run.append(strike_info)
+            state["seen_strike_ids"].add(strike_id)
+            # Keep cache bounded
+            if len(state["seen_strike_ids"]) > 5000:
+                state["seen_strike_ids"] = set(list(state["seen_strike_ids"])[-2500:])
 
+        # Filter: save all strikes for plotting, but alert only on those inside
         if detected_in_this_run:
-            state["detections_count"] += len(detected_in_this_run)
+            alert_strikes = [s for s in detected_in_this_run if s["is_inside"]]
+            
             state["recent_strikes"].extend(detected_in_this_run)
             state["recent_strikes"] = state["recent_strikes"][-10000:]
             
-            add_log(f"ALERT: {len(detected_in_this_run)} strike(s) detected inside target region!")
-            await trigger_discord_alert(detected_in_this_run)
+            if alert_strikes:
+                state["detections_count"] += len(alert_strikes)
+                add_log(f"ALERT: {len(alert_strikes)} strike(s) detected inside target region!")
+                await trigger_discord_alert(alert_strikes)
+            else:
+                add_log(f"Plotted {len(detected_in_this_run)} external strike(s) in buffer zone.")
         else:
-            add_log("No new strikes detected inside target region.")
+            add_log("No new strikes detected in monitored range.")
 
     except Exception as e:
         logger.exception("Error checking lightning data:")
