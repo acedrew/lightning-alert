@@ -63,6 +63,16 @@ const hasDrawnShape = computed(() => {
   return localCoordinates.value !== null
 })
 
+const estimatedApiCalls = computed(() => {
+  // 5 minutes = 12 calls/hour
+  return timeoutHours.value * 12
+})
+
+const freeTierPercentage = computed(() => {
+  const calls = estimatedApiCalls.value
+  return ((calls / 1500) * 100).toFixed(2)
+})
+
 const shapeDetailsText = computed(() => {
   if (!localCoordinates.value) return ''
   if (localType.value === 'circle') {
@@ -662,6 +672,14 @@ const stopMonitoring = async () => {
             </div>
             <div class="ace-field__hint">Monitoring will automatically stop after this duration.</div>
           </div>
+          
+          <div class="api-estimate">
+            <span class="estimate-label">⚡ Estimated API Calls:</span>
+            <span class="estimate-value">
+              <strong>{{ estimatedApiCalls }}</strong> calls 
+              <span class="estimate-percent">({{ freeTierPercentage }}% of free limit)</span>
+            </span>
+          </div>
         </div>
 
         <!-- Credentials Config Card -->
@@ -784,6 +802,13 @@ const stopMonitoring = async () => {
           >
             📋 Logs ({{ status.logs.length }})
           </button>
+          <button 
+            class="tab-btn" 
+            :class="{ active: activeTab === 'docs' }"
+            @click="activeTab = 'docs'"
+          >
+            📖 Docs
+          </button>
         </div>
 
         <div class="tab-content card">
@@ -835,6 +860,48 @@ const stopMonitoring = async () => {
               <div v-for="(log, idx) in status.logs.slice().reverse()" :key="idx" class="log-item">
                 {{ log }}
               </div>
+            </div>
+          </div>
+
+          <!-- Docs Tab -->
+          <div v-if="activeTab === 'docs'" class="docs-tab">
+            <div class="docs-container">
+              <section class="docs-section">
+                <h4>🔑 How to Acquire an XWeather API Key</h4>
+                <ol>
+                  <li>Go to the <a href="https://www.xweather.com/" target="_blank" class="docs-link">XWeather Website ↗</a> and sign up for an account.</li>
+                  <li>Log in to your contributor dashboard and navigate to <strong>API Credentials</strong> or <strong>Subscriptions</strong>.</li>
+                  <li>Acquire your <strong>Client ID</strong> and <strong>Client Secret</strong>.</li>
+                  <li>Combine them in the format <code>CLIENT_ID_CLIENT_SECRET</code> (separated by an underscore, e.g. <code>18VzzDS0Mi2ikqdJTn7bt_P4CcQPTSHPkwIRKZ4lXe3ZMDda3suJXY9QOiKieD</code>).</li>
+                  <li>Paste the combined key into the <strong>XWeather API Key</strong> field in the <strong>Credentials Settings</strong> card below.</li>
+                </ol>
+              </section>
+
+              <section class="docs-section">
+                <h4>🔔 How to Set Up a Discord Webhook</h4>
+                <ol>
+                  <li>Open Discord and navigate to the server and channel where you want to receive alerts.</li>
+                  <li>Click the gear icon (⚙️) next to the channel name to open <strong>Channel Settings</strong>.</li>
+                  <li>Go to <strong>Integrations</strong> and click <strong>Webhooks</strong>.</li>
+                  <li>Click <strong>New Webhook</strong>, choose a name and avatar, and ensure the correct channel is selected.</li>
+                  <li>Click <strong>Copy Webhook URL</strong>.</li>
+                  <li>Paste the URL into the <strong>Discord Webhook</strong> field in the <strong>Credentials Settings</strong> card below.</li>
+                </ol>
+              </section>
+
+              <section class="docs-section">
+                <h4>🎯 How to Use the Interface</h4>
+                <ul>
+                  <li><strong>Define Detection Area:</strong> Select ⭕ <strong>Circle</strong> or ⬡ <strong>Polygon</strong>.
+                    <ul>
+                      <li><em>Circle:</em> Click on the map to place the center, move the mouse to choose the radius, and click again to lock it.</li>
+                      <li><em>Polygon:</em> Click on the map to place vertices (at least 3). Click the first point (lime dot) or click <strong>✓ Complete Polygon</strong> in the sidebar to close the shape.</li>
+                    </ul>
+                  </li>
+                  <li><strong>Configure Duration:</strong> Use the slider to set a timeout from 1 to 4 hours. The interface shows the estimated API call count and monthly free limit percentage.</li>
+                  <li><strong>Start Monitoring:</strong> Click <strong>▶ Start Monitoring</strong>. Flash Finder will query XWeather every 5 minutes. If strikes fall inside the region, a rich Discord alert with map links is sent.</li>
+                </ul>
+              </section>
             </div>
           </div>
         </div>
@@ -1175,5 +1242,90 @@ const stopMonitoring = async () => {
   border: 1px solid rgba(246, 81, 29, 0.3);
   margin-bottom: 0.8rem;
   text-align: center;
+}
+
+.api-estimate {
+  margin-top: 0.8rem;
+  font-size: 0.76rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed var(--ace-border-strong);
+  border-radius: var(--ace-radius-sm);
+  padding: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.estimate-label {
+  color: var(--ace-text-subtle);
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.68rem;
+}
+
+.estimate-value {
+  color: var(--ace-primary);
+  font-weight: 700;
+}
+
+.estimate-percent {
+  color: var(--ace-text-muted);
+  font-weight: 500;
+}
+
+.docs-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 0.5rem;
+  max-width: 800px;
+}
+
+.docs-section {
+  border-bottom: 1px solid var(--ace-border);
+  padding-bottom: 1.2rem;
+}
+
+.docs-section:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.docs-section h4 {
+  font-family: var(--ace-font-heading);
+  margin: 0 0 0.6rem;
+  color: var(--ace-secondary);
+  font-size: 1.05rem;
+}
+
+.docs-section ol, .docs-section ul {
+  margin: 0;
+  padding-left: 1.3rem;
+  font-size: 0.84rem;
+  color: var(--ace-text-muted);
+  line-height: 1.5;
+}
+
+.docs-section li {
+  margin-bottom: 0.5rem;
+}
+
+.docs-section code {
+  background: var(--ace-bg-panel);
+  color: var(--ace-secondary);
+  border: 1px solid var(--ace-border);
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+  font-size: 0.78rem;
+}
+
+.docs-link {
+  color: var(--ace-secondary);
+  text-decoration: underline;
+  font-weight: 700;
+}
+
+.docs-link:hover {
+  color: var(--ace-text);
 }
 </style>
