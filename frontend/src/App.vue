@@ -143,7 +143,7 @@ onMounted(() => {
   }).addTo(map)
 
   drawLayer = L.layerGroup().addTo(map)
-  strikeGroup = L.layerGroup().addTo(map)
+  strikeGroup = L.featureGroup().addTo(map)
 
   // Listen to clicks on map for drawing
   map.on('click', handleMapClick)
@@ -491,7 +491,8 @@ const updateMapFromStatus = () => {
         color: strokeColor,
         weight: 3,
         fillColor: fillColor,
-        fillOpacity: 0.15
+        fillOpacity: 0.15,
+        interactive: false
       }).addTo(drawLayer)
       
       staticFitBoundOnce(renderedActiveShape.getBounds())
@@ -502,7 +503,8 @@ const updateMapFromStatus = () => {
         color: strokeColor,
         weight: 3,
         fillColor: fillColor,
-        fillOpacity: 0.15
+        fillOpacity: 0.15,
+        interactive: false
       }).addTo(drawLayer)
       
       staticFitBoundOnce(renderedActiveShape.getBounds())
@@ -553,6 +555,10 @@ const updateMapFromStatus = () => {
       marker.setRadius(style.radius)
     }
   })
+  
+  if (strikeGroup && typeof strikeGroup.bringToFront === 'function') {
+    strikeGroup.bringToFront()
+  }
 }
 
 const staticFitBoundOnce = (bounds) => {
