@@ -35,20 +35,39 @@ Flash Finder is an interactive, real-time lightning monitoring web application. 
 
 To run the pre-built container image directly from the GitHub Container Registry (GHCR):
 
-1.  **Run the Container** (mounting a local folder to persist your configurations):
-    ```bash
-    mkdir -p ./flash-finder-data
-    podman run -d -p 8000:8000 -v ./flash-finder-data:/app/data:Z --name flash-finder ghcr.io/acedrew/lightning-alert:latest
-    ```
-    *(Note: Use `:Z` flag on SELinux/macOS environments to enable shared folder permissions.)*
+#### 🍎 Using Podman:
+Create a local folder to persist your configurations and run the image:
+```bash
+mkdir -p ./flash-finder-data
+podman run -d -p 8000:8000 -v ./flash-finder-data:/app/data:Z --name flash-finder ghcr.io/acedrew/lightning-alert:latest
+```
+*(Note: The `:Z` flag flag is required by Podman on systems with SELinux enabled to allow container write access to host folders.)*
 
-2.  Open **`http://localhost:8000`** in your browser and configure your credentials in the **Credentials Settings** panel.
+#### 🐳 Using Docker / Docker Desktop:
+Create a local folder (using absolute paths for Docker compatibility) and run the image:
+```bash
+mkdir -p ./flash-finder-data
+docker run -d -p 8000:8000 -v "$(pwd)/flash-finder-data:/app/data" --name flash-finder ghcr.io/acedrew/lightning-alert:latest
+```
+
+> [!TIP]
+> **Docker Desktop on macOS/Windows**: Ensure that your workspace directory (`/Users/username/...`) is allowed in Docker Desktop's **File Sharing** list (located under **Settings > Resources > File Sharing**) so the container is authorized to mount and read/write the host directory.
+
+Open **`http://localhost:8000`** in your browser and configure your credentials in the **Credentials Settings** panel.
+
+---
 
 *(Optional: If you wish to build the container image locally from source code:)*
-```bash
-podman build -t flash-finder -f Containerfile .
-podman run -d -p 8000:8000 -v ./flash-finder-data:/app/data:Z --name flash-finder flash-finder
-```
+*   **Podman**:
+    ```bash
+    podman build -t flash-finder -f Containerfile .
+    podman run -d -p 8000:8000 -v ./flash-finder-data:/app/data:Z --name flash-finder flash-finder
+    ```
+*   **Docker**:
+    ```bash
+    docker build -t flash-finder -f Containerfile .
+    docker run -d -p 8000:8000 -v "$(pwd)/flash-finder-data:/app/data" --name flash-finder flash-finder
+    ```
 
 ---
 
