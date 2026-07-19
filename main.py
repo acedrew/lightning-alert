@@ -347,11 +347,13 @@ async def check_lightning():
         # Process strikes
         detected_in_this_run = []
         for strike in strikes:
+            ob = strike.get("ob", {})
             strike_id = strike.get("id")
             if not strike_id:
                 # generate pseudo id
                 loc = strike.get("loc", {})
-                strike_id = f"{strike.get('timestamp')}_{loc.get('lat')}_{loc.get('long')}"
+                ts = ob.get("timestamp") or strike.get("timestamp") or "0"
+                strike_id = f"{ts}_{loc.get('lat')}_{loc.get('long')}"
 
             # Skip already seen strikes
             if strike_id in state["seen_strike_ids"]:
@@ -378,10 +380,10 @@ async def check_lightning():
                 "id": strike_id,
                 "lat": strike_lat,
                 "lon": strike_lon,
-                "type": strike.get("type", "Unknown"),
-                "intensity": strike.get("intensity"),
-                "dateTimeISO": strike.get("dateTimeISO"),
-                "timestamp": strike.get("timestamp"),
+                "type": ob.get("type") or strike.get("type") or "Unknown",
+                "intensity": ob.get("intensity") or strike.get("intensity"),
+                "dateTimeISO": ob.get("dateTimeISO") or strike.get("dateTimeISO"),
+                "timestamp": ob.get("timestamp") or strike.get("timestamp"),
                 "distance_meters": dist_meters,
                 "is_inside": is_inside,
                 "detected_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
