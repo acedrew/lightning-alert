@@ -33,21 +33,22 @@ Flash Finder is an interactive, real-time lightning monitoring web application. 
 
 ### Option A: Run with Podman/Docker (Recommended)
 
-Flash Finder is fully containerized. To persist settings across container updates, mount a volume to `/app/data`.
+To run the pre-built container image directly from the GitHub Container Registry (GHCR):
 
-1.  **Build the Container Image**:
-    ```bash
-    podman build -t flash-finder -f Containerfile .
-    ```
-
-2.  **Run the Container**:
+1.  **Run the Container** (mounting a local folder to persist your configurations):
     ```bash
     mkdir -p ./flash-finder-data
-    podman run -d -p 8000:8000 -v ./flash-finder-data:/app/data:Z --name flash-finder flash-finder
+    podman run -d -p 8000:8000 -v ./flash-finder-data:/app/data:Z --name flash-finder ghcr.io/acedrew/lightning-alert:latest
     ```
     *(Note: Use `:Z` flag on SELinux/macOS environments to enable shared folder permissions.)*
 
-3.  Open **`http://localhost:8000`** and configure your keys in the **Credentials Settings** panel.
+2.  Open **`http://localhost:8000`** in your browser and configure your credentials in the **Credentials Settings** panel.
+
+*(Optional: If you wish to build the container image locally from source code:)*
+```bash
+podman build -t flash-finder -f Containerfile .
+podman run -d -p 8000:8000 -v ./flash-finder-data:/app/data:Z --name flash-finder flash-finder
+```
 
 ---
 
