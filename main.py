@@ -395,7 +395,7 @@ async def check_lightning():
         if detected_in_this_run:
             state["detections_count"] += len(detected_in_this_run)
             state["recent_strikes"].extend(detected_in_this_run)
-            state["recent_strikes"] = state["recent_strikes"][-100:]
+            state["recent_strikes"] = state["recent_strikes"][-10000:]
             
             add_log(f"ALERT: {len(detected_in_this_run)} strike(s) detected inside target region!")
             await trigger_discord_alert(detected_in_this_run)

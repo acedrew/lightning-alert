@@ -372,6 +372,42 @@ const clearDrawnShape = () => {
   }
 }
 
+// Style helper to age-fade strike markers
+const getMarkerStyleForStrike = (strike) => {
+  const strikeTime = new Date(strike.dateTimeISO).getTime()
+  const now = Date.now()
+  const ageMinutes = (now - strikeTime) / 60000
+  
+  if (ageMinutes <= 15) {
+    // Very recent (0-15m): vibrant danger red with high opacity
+    return {
+      radius: 9,
+      color: 'var(--ace-danger)',
+      fillColor: 'var(--ace-danger)',
+      fillOpacity: 0.9,
+      weight: 2
+    }
+  } else if (ageMinutes <= 60) {
+    // Recent (15-60m): warm orange, medium opacity
+    return {
+      radius: 7,
+      color: '#f69d1d',
+      fillColor: '#f69d1d',
+      fillOpacity: 0.55,
+      weight: 1.5
+    }
+  } else {
+    // Old (>60m): small, faded gray, low opacity
+    return {
+      radius: 5,
+      color: 'var(--ace-text-subtle)',
+      fillColor: 'var(--ace-text-subtle)',
+      fillOpacity: 0.25,
+      weight: 1
+    }
+  }
+}
+
 // Render shapes and markers on map from status
 let renderedActiveShape = null
 let hasFittedBounds = false
@@ -431,16 +467,11 @@ const updateMapFromStatus = () => {
     }
   }
 
-  // Add markers for new strikes
+  // Add markers for new strikes and update existing ones
   status.value.recent_strikes.forEach(strike => {
+    const style = getMarkerStyleForStrike(strike)
     if (!strikeMarkers[strike.id]) {
-      const marker = L.circleMarker([strike.lat, strike.lon], {
-        radius: 8,
-        color: 'var(--ace-danger)',
-        fillColor: 'var(--ace-danger)',
-        fillOpacity: 0.85,
-        weight: 2
-      }).addTo(strikeGroup)
+      const marker = L.circleMarker([strike.lat, strike.lon], style).addTo(strikeGroup)
 
       const dateStr = new Date(strike.dateTimeISO).toLocaleString()
       const distStr = strike.distance_meters !== null 
@@ -463,6 +494,11 @@ const updateMapFromStatus = () => {
       `)
 
       strikeMarkers[strike.id] = marker
+    } else {
+      // Update styling of existing marker dynamically as it ages
+      const marker = strikeMarkers[strike.id]
+      marker.setStyle(style)
+      marker.setRadius(style.radius)
     }
   })
 }
