@@ -731,9 +731,6 @@ const updateWedgeHandles = () => {
       if (renderedActiveShape) {
         renderedActiveShape.setLatLngs(pts)
       }
-      
-      const newFgPos = getDestinationPoint(coords.origin[0], coords.origin[1], coords.heading, coords.foreground_radius)
-      wedgeFgMarker.setLatLng(newFgPos)
     })
 
     wedgeFgMarker.on('dragend', () => {
@@ -778,8 +775,6 @@ const updateWedgeHandles = () => {
       }
       
       const newBgPos = getDestinationPoint(coords.origin[0], coords.origin[1], coords.heading, coords.background_radius)
-      wedgeBgMarker.setLatLng(newBgPos)
-      
       if (wedgeCenterline) wedgeCenterline.setLatLngs([coords.origin, newBgPos])
       if (renderedApiCircle) {
         const apiRad = Math.max(1609.34, Math.min(newBgRad, 96560.64))
