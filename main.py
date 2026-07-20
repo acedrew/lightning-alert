@@ -337,22 +337,16 @@ async def check_lightning():
         success = False
         error_msg = ""
 
-        # Query options: we try /lightning/within first, and fallback to /lightning/closest
+        # Query XWeather /lightning/closest (Radius-based query available on standard/free tiers)
         async with httpx.AsyncClient() as client:
-            # 1. Primary Query: Try /lightning/within
-            url = "https://data.api.xweather.com/lightning/within"
+            url = "https://data.api.xweather.com/lightning/closest"
             params = {
+                "p": f"{center_lat},{center_lon}",
+                "radius": f"{radius_miles_query}mi",
+                "limit": 1000,
                 "client_id": client_id,
-                "client_secret": client_secret,
-                "limit": 1000
+                "client_secret": client_secret
             }
-            if state["type"] == "polygon":
-                # Format polygon as lat,lon,lat,lon...
-                p_val = ",".join(f"{pt[0]},{pt[1]}" for pt in state["coordinates"]["polygon"])
-                params["p"] = p_val
-            else:
-                params["p"] = f"{center_lat},{center_lon}"
-                params["radius"] = f"{radius_miles_query}mi"
 
             try:
                 resp = await client.get(url, params=params, timeout=15.0)
@@ -367,31 +361,6 @@ async def check_lightning():
                     error_msg = f"HTTP status {resp.status_code}"
             except Exception as e:
                 error_msg = str(e)
-
-            # 2. Fallback Query: Try /lightning/closest if primary failed (e.g., standard key compatibility)
-            if not success:
-                logger.info(f"Primary endpoint failed ({error_msg}). Falling back to /lightning/closest...")
-                fallback_url = "https://data.api.xweather.com/lightning/closest"
-                fallback_params = {
-                    "p": f"{center_lat},{center_lon}",
-                    "radius": f"{radius_miles_query}mi",
-                    "limit": 1000,
-                    "client_id": client_id,
-                    "client_secret": client_secret
-                }
-                try:
-                    resp = await client.get(fallback_url, params=fallback_params, timeout=15.0)
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        if data.get("success"):
-                            strikes = data.get("response", [])
-                            success = True
-                        else:
-                            error_msg = data.get("error", {}).get("description", "Unknown API error")
-                    else:
-                        error_msg = f"HTTP status {resp.status_code}"
-                except Exception as e:
-                    error_msg = str(e)
 
         if not success:
             err = f"XWeather API error: {error_msg}"
