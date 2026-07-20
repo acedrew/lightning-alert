@@ -34,6 +34,7 @@ state = {
     "recent_strikes": [],  # List of dicts
     "logs": [],  # List of status logs
     "seen_strike_ids": set(),  # Deduplication set
+    "last_error": None,  # Last API or system error message
 }
 
 # Active background task reference
@@ -67,21 +68,34 @@ DATA_DIR = "/app/data" if os.path.exists("/app/data") else os.path.dirname(os.pa
 CONFIG_PATH = os.path.join(DATA_DIR, "config.json")
 
 def load_config() -> Dict[str, str]:
+    # Force reloading .env to pick up any changes
+    load_dotenv(override=True)
+    
     config = {"xweather_api_key": "", "discord_webhook": ""}
+    
+    # 1. Read environment variables
+    env_key = os.getenv("XWEATHER_API_KEY", "").strip()
+    env_webhook = os.getenv("DISCORD_WEBHOOK", "").strip()
+    
+    if env_key:
+        config["xweather_api_key"] = env_key
+    if env_webhook:
+        config["discord_webhook"] = env_webhook
+        
+    # 2. Override with config.json if non-empty fields exist
     if os.path.exists(CONFIG_PATH):
         try:
             with open(CONFIG_PATH, "r") as f:
                 data = json.load(f)
-                config["xweather_api_key"] = data.get("xweather_api_key", "").strip()
-                config["discord_webhook"] = data.get("discord_webhook", "").strip()
+                file_key = data.get("xweather_api_key", "").strip()
+                file_webhook = data.get("discord_webhook", "").strip()
+                if file_key:
+                    config["xweather_api_key"] = file_key
+                if file_webhook:
+                    config["discord_webhook"] = file_webhook
         except Exception as e:
             logger.error(f"Failed to read config.json: {e}")
             
-    if not config["xweather_api_key"]:
-        config["xweather_api_key"] = os.getenv("XWEATHER_API_KEY", "").strip()
-    if not config["discord_webhook"]:
-        config["discord_webhook"] = os.getenv("DISCORD_WEBHOOK", "").strip()
-        
     return config
 
 app = FastAPI(title="Flash Finder", lifespan=lifespan)
@@ -287,7 +301,9 @@ async def check_lightning():
         client_id = xweather_key
 
     if not client_id:
-        add_log("Error: XWeather credentials missing in config or env.")
+        err = "XWeather credentials missing in config or env."
+        add_log(f"Error: {err}")
+        state["last_error"] = err
         return
 
     # Build geographical query parameters
@@ -378,8 +394,13 @@ async def check_lightning():
                     error_msg = str(e)
 
         if not success:
+            err = f"XWeather API error: {error_msg}"
             add_log(f"API query failed: {error_msg}")
+            state["last_error"] = err
             return
+
+        # Clear error state on successful API query
+        state["last_error"] = None
 
         # Process strikes
         detected_in_this_run = []

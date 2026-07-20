@@ -1567,9 +1567,9 @@ const stopMonitoring = async () => {
             <h3 class="card-title">Flash Finder Status</h3>
             <span 
               class="ace-badge" 
-              :class="status.active ? 'ace-badge--success' : 'ace-badge--neutral'"
+              :class="status.last_error ? 'ace-badge--danger' : (status.active ? 'ace-badge--success' : 'ace-badge--neutral')"
             >
-              {{ status.active ? 'Active' : 'Inactive' }}
+              {{ status.last_error ? 'API Error' : (status.active ? 'Active' : 'Inactive') }}
             </span>
           </div>
 
@@ -1585,6 +1585,15 @@ const stopMonitoring = async () => {
             <div class="stat-item">
               <span class="stat-label">Remaining</span>
               <span class="stat-value">{{ timeRemainingText }}</span>
+            </div>
+          </div>
+
+          <!-- Alert Error Banner if last_error is present -->
+          <div v-if="status.last_error" class="status-error-banner" style="margin-top: 0.8rem; background: rgba(255, 71, 87, 0.15); border: 1px solid var(--ace-danger); border-radius: var(--ace-radius-md); padding: 0.6rem 0.8rem; color: #ff6b81; font-size: 0.82rem; display: flex; align-items: flex-start; gap: 0.5rem;">
+            <span style="font-size: 1.1rem; line-height: 1;">⚠️</span>
+            <div>
+              <strong style="color: #ff4757; display: block; margin-bottom: 0.2rem;">API Check Failed</strong>
+              <span>{{ status.last_error }}</span>
             </div>
           </div>
 
