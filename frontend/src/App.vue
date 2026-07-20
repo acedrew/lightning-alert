@@ -707,8 +707,8 @@ const updateWedgeHandles = () => {
       icon: L.divIcon({
         className: 'custom-wedge-handle',
         html: '<div class="wedge-handle-fg" title="Drag to adjust inner radius"></div>',
-        iconSize: [14, 14],
-        iconAnchor: [7, 7]
+        iconSize: [20, 20],
+        iconAnchor: [10, 10]
       })
     }).addTo(drawLayer)
 
@@ -752,8 +752,8 @@ const updateWedgeHandles = () => {
       icon: L.divIcon({
         className: 'custom-wedge-handle',
         html: '<div class="wedge-handle-bg" title="Drag to adjust outer radius"></div>',
-        iconSize: [16, 16],
-        iconAnchor: [8, 8]
+        iconSize: [22, 22],
+        iconAnchor: [11, 11]
       })
     }).addTo(drawLayer)
 
@@ -807,6 +807,12 @@ const updateWedgeHandles = () => {
   } else {
     wedgeCenterline.setLatLngs([origin, bgPos])
   }
+
+  // Ensure all interactive handle markers sit at the very top of the z-index stack
+  if (wedgeOriginMarker && typeof wedgeOriginMarker.bringToFront === 'function') wedgeOriginMarker.bringToFront()
+  if (wedgeFocalMarker && typeof wedgeFocalMarker.bringToFront === 'function') wedgeFocalMarker.bringToFront()
+  if (wedgeFgMarker && typeof wedgeFgMarker.bringToFront === 'function') wedgeFgMarker.bringToFront()
+  if (wedgeBgMarker && typeof wedgeBgMarker.bringToFront === 'function') wedgeBgMarker.bringToFront()
 }
 
 // Wedge drawing setup
@@ -1097,6 +1103,10 @@ const updateMapFromStatus = () => {
         fill: false,
         interactive: false
       }).addTo(drawLayer)
+      
+      if (typeof renderedApiCircle.bringToBack === 'function') {
+        renderedApiCircle.bringToBack()
+      }
     }
 
     // Update wedge handle markers so they are added to DOM on top of vector layers
