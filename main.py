@@ -436,20 +436,32 @@ async def check_lightning():
                 state["seen_strike_ids"] = set(list(state["seen_strike_ids"])[-2500:])
 
         # Filter: save all strikes for plotting, but alert only on those inside
+        alert_strikes = [s for s in detected_in_this_run if s["is_inside"]] if detected_in_this_run else []
+        target_count = len(alert_strikes)
+        
+        if alert_strikes:
+            state["detections_count"] += target_count
+
         if detected_in_this_run:
-            alert_strikes = [s for s in detected_in_this_run if s["is_inside"]]
-            
             state["recent_strikes"].extend(detected_in_this_run)
             state["recent_strikes"] = state["recent_strikes"][-10000:]
-            
-            if alert_strikes:
-                state["detections_count"] += len(alert_strikes)
-                add_log(f"ALERT: {len(alert_strikes)} strike(s) detected inside target region!")
-                await trigger_discord_alert(alert_strikes)
-            else:
-                add_log(f"Plotted {len(detected_in_this_run)} external strike(s) in buffer zone.")
-        else:
-            add_log("No new strikes detected in monitored range.")
+
+        # Log detailed check summary statistics
+        total_api_strikes = len(strikes)
+        new_strikes = len(detected_in_this_run)
+        
+        summary_log = (
+            f"📊 Check #{state['checks_count']} Summary: "
+            f"{total_api_strikes} total strike(s) in API buffer ({radius_miles_query:.1f}mi radius) | "
+            f"{new_strikes} new | "
+            f"{target_count} inside target area | "
+            f"Session Total: {state['detections_count']}"
+        )
+        add_log(summary_log)
+
+        if alert_strikes:
+            add_log(f"⚡ ALERT: {target_count} strike(s) detected inside target region!")
+            await trigger_discord_alert(alert_strikes)
 
     except Exception as e:
         logger.exception("Error checking lightning data:")
