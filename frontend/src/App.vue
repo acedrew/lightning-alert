@@ -781,6 +781,10 @@ const updateWedgeHandles = () => {
       wedgeBgMarker.setLatLng(newBgPos)
       
       if (wedgeCenterline) wedgeCenterline.setLatLngs([coords.origin, newBgPos])
+      if (renderedApiCircle) {
+        const apiRad = Math.max(1609.34, Math.min(newBgRad, 96560.64))
+        renderedApiCircle.setRadius(apiRad)
+      }
     })
 
     wedgeBgMarker.on('dragend', () => {
@@ -1080,21 +1084,24 @@ const updateMapFromStatus = () => {
       apiCenter = coords.origin
       apiRadiusMeters = Math.max(1609.34, Math.min(coords.background_radius, 96560.64))
 
-      updateWedgeHandles()
-      
       staticFitBoundOnce(renderedActiveShape.getBounds())
     }
 
-    // Render requested API query circle ring
+    // Render requested API query circle ring BEFORE handles so handle markers sit on top
     if (apiCenter && apiRadiusMeters > 0) {
       renderedApiCircle = L.circle(apiCenter, {
         radius: apiRadiusMeters,
-        color: 'var(--ace-info)',
+        color: '#00e5ff',
         weight: 1.5,
         dashArray: '6, 8',
         fill: false,
         interactive: false
       }).addTo(drawLayer)
+    }
+
+    // Update wedge handle markers so they are added to DOM on top of vector layers
+    if (localType.value === 'wedge') {
+      updateWedgeHandles()
     }
   } else {
     clearWedgeHandles()
