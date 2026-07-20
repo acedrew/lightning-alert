@@ -308,20 +308,16 @@ async def check_lightning():
 
     # Build geographical query parameters
     try:
-        # Determine center, query radius
+        # Determine center, query radius (capped at max 100 km)
         if state["type"] == "circle":
             center_lat, center_lon = state["coordinates"]["center"]
             radius_meters = state["coordinates"]["radius"]
-            radius_miles = radius_meters / 1609.34
-            # Enforce min 1 mile, max 60 miles for safety/caps
-            radius_miles_query = max(1.0, min(radius_miles, 60.0))
+            radius_km_query = max(1.0, min(radius_meters / 1000.0, 100.0))
         elif state["type"] == "wedge":
             origin = state["coordinates"]["origin"]
             center_lat, center_lon = origin[0], origin[1]
             radius_meters = state["coordinates"]["background_radius"]
-            radius_miles = radius_meters / 1609.34
-            # Enforce min 1 mile, max 60 miles for safety/caps
-            radius_miles_query = max(1.0, min(radius_miles, 60.0))
+            radius_km_query = max(1.0, min(radius_meters / 1000.0, 100.0))
         else: # polygon
             poly = state["coordinates"]["polygon"]
             # Centroid
@@ -329,20 +325,18 @@ async def check_lightning():
             center_lon = sum(pt[1] for pt in poly) / len(poly)
             # Bounding radius
             max_dist = max(haversine_distance(center_lat, center_lon, pt[0], pt[1]) for pt in poly)
-            radius_meters = max_dist
-            radius_miles = radius_meters / 1609.34
-            radius_miles_query = max(1.0, min(radius_miles, 60.0))
+            radius_km_query = max(1.0, min(max_dist / 1000.0, 100.0))
 
         strikes = []
         success = False
         error_msg = ""
 
-        # Query XWeather /lightning/closest (Radius-based query available on standard/free tiers)
+        # Query XWeather /lightning/closest (Radius-based query capped at 100km)
         async with httpx.AsyncClient() as client:
             url = "https://data.api.xweather.com/lightning/closest"
             params = {
                 "p": f"{center_lat},{center_lon}",
-                "radius": f"{radius_miles_query}mi",
+                "radius": f"{radius_km_query:.1f}km",
                 "limit": 1000,
                 "client_id": client_id,
                 "client_secret": client_secret
@@ -452,7 +446,7 @@ async def check_lightning():
         
         summary_log = (
             f"📊 Check #{state['checks_count']} Summary: "
-            f"{total_api_strikes} total strike(s) in API buffer ({radius_miles_query:.1f}mi radius) | "
+            f"{total_api_strikes} total strike(s) in API buffer ({radius_km_query:.1f}km radius) | "
             f"{new_strikes} new | "
             f"{target_count} inside target area | "
             f"Session Total: {state['detections_count']}"

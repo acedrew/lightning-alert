@@ -781,7 +781,7 @@ const updateWedgeHandles = () => {
       const newBgPos = getDestinationPoint(coords.origin[0], coords.origin[1], coords.heading, coords.background_radius)
       if (wedgeCenterline) wedgeCenterline.setLatLngs([coords.origin, newBgPos])
       if (renderedApiCircle) {
-        const apiRad = Math.max(1609.34, Math.min(newBgRad, 96560.64))
+        const apiRad = Math.max(1609.34, Math.min(newBgRad, 100000.0))
         renderedApiCircle.setRadius(apiRad)
       }
     })
@@ -1056,7 +1056,7 @@ const updateMapFromStatus = () => {
       }).addTo(drawLayer)
       
       apiCenter = center
-      apiRadiusMeters = Math.max(1609.34, Math.min(radius, 96560.64))
+      apiRadiusMeters = Math.max(1609.34, Math.min(radius, 100000.0))
       
       staticFitBoundOnce(renderedActiveShape.getBounds())
       
@@ -1076,7 +1076,7 @@ const updateMapFromStatus = () => {
         const cLon = poly.reduce((acc, p) => acc + p[1], 0) / poly.length
         apiCenter = [cLat, cLon]
         const maxDist = Math.max(...poly.map(p => getDistanceAndBearing(cLat, cLon, p[0], p[1]).distance))
-        apiRadiusMeters = Math.max(1609.34, Math.min(maxDist, 96560.64))
+        apiRadiusMeters = Math.max(1609.34, Math.min(maxDist, 100000.0))
       }
 
       staticFitBoundOnce(renderedActiveShape.getBounds())
@@ -1096,7 +1096,7 @@ const updateMapFromStatus = () => {
       }).addTo(drawLayer)
       
       apiCenter = coords.origin
-      apiRadiusMeters = Math.max(1609.34, Math.min(coords.background_radius, 96560.64))
+      apiRadiusMeters = Math.max(1609.34, Math.min(coords.background_radius, 100000.0))
 
       staticFitBoundOnce(renderedActiveShape.getBounds())
     }
