@@ -15,7 +15,7 @@ Flash Finder is an interactive, real-time lightning monitoring web application. 
     *   🔴 **0 - 15 minutes**: Vibrant danger-red (Active storm front).
     *   🟠 **15 - 60 minutes**: Medium-faded orange.
     *   ⚪ **60+ minutes**: Low-opacity gray (Historical storm activity).
-*   **Smart Buffering & Target Alerts**: Plots *all* lightning strikes detected within the query radius (marked as cyan/blue buffer dots) so you can track approaching storms, but *selectively alerts* on Discord only when strikes hit inside your exact defined threat area.
+*   **Smart Buffering & Target Alerts**: Draws a dashed cyan **API Query Circle** ring around your selected area showing the exact XWeather 360° buffer query boundary. Plots *all* strikes within the query radius (cyan/blue buffer dots) to track approaching storms, but *selectively alerts* on Discord only when strikes hit inside your exact defined threat area.
 *   **API Usage Estimator**: Automatically calculates the number of API calls that will be made and the percentage of your monthly XWeather free-tier quota (1,500 free calls/month) before starting a monitoring run.
 *   **In-App Settings**: Configure your credentials dynamically in the sidebar. Credentials are saved locally or persisted inside container volumes.
 *   **Multi-Platform Containerization**: Out-of-the-box support for Podman and Docker.

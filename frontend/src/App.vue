@@ -1000,24 +1000,30 @@ const getMarkerStyleForStrike = (strike) => {
 
 // Render shapes and markers on map from status
 let renderedActiveShape = null
+let renderedApiCircle = null
 let hasFittedBounds = false
 
 const updateMapFromStatus = () => {
   if (!map) return
 
-  // 1. Render active/defined area
+  // 1. Render active/defined area & API query circle
   if (renderedActiveShape) {
     drawLayer.removeLayer(renderedActiveShape)
     renderedActiveShape = null
   }
-
-
+  if (renderedApiCircle) {
+    drawLayer.removeLayer(renderedApiCircle)
+    renderedApiCircle = null
+  }
 
   if (localCoordinates.value) {
     const isActive = status.value.active
     const strokeColor = isActive ? 'var(--ace-primary)' : 'var(--ace-secondary)'
     const fillColor = isActive ? 'var(--ace-primary)' : 'var(--ace-secondary)'
     
+    let apiCenter = null
+    let apiRadiusMeters = 0
+
     if (localType.value === 'circle') {
       clearWedgeHandles()
       const center = localCoordinates.value.center
@@ -1030,6 +1036,9 @@ const updateMapFromStatus = () => {
         fillOpacity: 0.15,
         interactive: false
       }).addTo(drawLayer)
+      
+      apiCenter = center
+      apiRadiusMeters = Math.max(1609.34, Math.min(radius, 96560.64))
       
       staticFitBoundOnce(renderedActiveShape.getBounds())
       
@@ -1044,6 +1053,14 @@ const updateMapFromStatus = () => {
         interactive: false
       }).addTo(drawLayer)
       
+      if (poly && poly.length > 0) {
+        const cLat = poly.reduce((acc, p) => acc + p[0], 0) / poly.length
+        const cLon = poly.reduce((acc, p) => acc + p[1], 0) / poly.length
+        apiCenter = [cLat, cLon]
+        const maxDist = Math.max(...poly.map(p => getDistanceAndBearing(cLat, cLon, p[0], p[1]).distance))
+        apiRadiusMeters = Math.max(1609.34, Math.min(maxDist, 96560.64))
+      }
+
       staticFitBoundOnce(renderedActiveShape.getBounds())
     } else if (localType.value === 'wedge') {
       const coords = localCoordinates.value
@@ -1060,9 +1077,24 @@ const updateMapFromStatus = () => {
         interactive: false
       }).addTo(drawLayer)
       
+      apiCenter = coords.origin
+      apiRadiusMeters = Math.max(1609.34, Math.min(coords.background_radius, 96560.64))
+
       updateWedgeHandles()
       
       staticFitBoundOnce(renderedActiveShape.getBounds())
+    }
+
+    // Render requested API query circle ring
+    if (apiCenter && apiRadiusMeters > 0) {
+      renderedApiCircle = L.circle(apiCenter, {
+        radius: apiRadiusMeters,
+        color: 'var(--ace-info)',
+        weight: 1.5,
+        dashArray: '6, 8',
+        fill: false,
+        interactive: false
+      }).addTo(drawLayer)
     }
   } else {
     clearWedgeHandles()
@@ -1597,6 +1629,10 @@ const stopMonitoring = async () => {
             <div class="legend-item-style" style="border-top: 1px solid rgba(255, 255, 255, 0.05); padding-top: 0.3rem; margin-top: 0.1rem;">
               <span class="legend-dot dot-info"></span>
               <span class="legend-text">Outside target area</span>
+            </div>
+            <div class="legend-item-style">
+              <span class="legend-ring ring-api"></span>
+              <span class="legend-text">API Query Circle</span>
             </div>
           </div>
         </div>
@@ -2220,6 +2256,20 @@ const stopMonitoring = async () => {
 .dot-info {
   background: var(--ace-secondary);
   box-shadow: 0 0 6px var(--ace-secondary);
+}
+
+.legend-ring {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.ring-api {
+  border: 1.5px dashed var(--ace-info);
+  background: transparent;
+  box-shadow: 0 0 6px rgba(0, 229, 255, 0.4);
 }
 
 .dot-muted {
