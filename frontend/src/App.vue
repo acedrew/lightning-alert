@@ -19,6 +19,8 @@ const wedgeOriginLat = ref(0.0)
 const wedgeOriginLng = ref(0.0)
 const wedgeFocalLat = ref(0.0)
 const wedgeFocalLng = ref(0.0)
+const wedgeFgRadiusKm = ref(1.0)
+const wedgeBgRadiusKm = ref(10.0)
 let wedgeFocalMarker = null // Target/focal marker pin
 
 // Draggable markers for wedge
@@ -722,6 +724,7 @@ const updateWedgeHandles = () => {
       
       const newFgRad = Math.max(0, Math.min(distance, coords.background_radius - 100))
       coords.foreground_radius = newFgRad
+      wedgeFgRadiusKm.value = Number((newFgRad / 1000.0).toFixed(2))
       
       const pts = getWedgePolygonPoints(
         coords.origin[0], coords.origin[1],
@@ -764,6 +767,7 @@ const updateWedgeHandles = () => {
       
       const newBgRad = Math.max(coords.foreground_radius + 100, Math.min(distance, 100000))
       coords.background_radius = newBgRad
+      wedgeBgRadiusKm.value = Number((newBgRad / 1000.0).toFixed(2))
       
       const pts = getWedgePolygonPoints(
         coords.origin[0], coords.origin[1],
@@ -866,6 +870,9 @@ const syncWedgeInputRefs = () => {
     wedgeOriginLat.value = Number(coords.origin[0].toFixed(6))
     wedgeOriginLng.value = Number(coords.origin[1].toFixed(6))
     
+    wedgeFgRadiusKm.value = Number((coords.foreground_radius / 1000.0).toFixed(2))
+    wedgeBgRadiusKm.value = Number((coords.background_radius / 1000.0).toFixed(2))
+
     if (coords.focal_point) {
       wedgeFocalLat.value = Number(coords.focal_point[0].toFixed(6))
       wedgeFocalLng.value = Number(coords.focal_point[1].toFixed(6))
@@ -884,6 +891,12 @@ const updateWedgeFromInputs = () => {
     coords.origin = [wedgeOriginLat.value, wedgeOriginLng.value]
     coords.focal_point = [wedgeFocalLat.value, wedgeFocalLng.value]
     
+    const fgMeters = Math.max(0, wedgeFgRadiusKm.value * 1000.0)
+    const bgMeters = Math.max(fgMeters + 100, wedgeBgRadiusKm.value * 1000.0)
+    
+    coords.foreground_radius = fgMeters
+    coords.background_radius = bgMeters
+
     // Recalculate heading
     const { bearing } = getDistanceAndBearing(
       coords.origin[0], coords.origin[1],
@@ -1449,6 +1462,40 @@ const stopMonitoring = async () => {
                       type="number" 
                       step="0.000001" 
                       v-model.number="wedgeFocalLng" 
+                      @change="updateWedgeFromInputs"
+                      :disabled="status.active"
+                      class="ace-input ace-input--sm"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <!-- Distance Ranges (Foreground & Background) -->
+              <div class="coordinate-group" style="margin-top: 0.6rem;">
+                <div class="coordinate-header">
+                  <label class="ace-field__label">📏 Distance Ranges (km)</label>
+                </div>
+                <div class="coordinate-inputs">
+                  <div class="coordinate-input-wrapper">
+                    <span class="coord-label">Inner</span>
+                    <input 
+                      type="number" 
+                      step="0.1" 
+                      min="0"
+                      v-model.number="wedgeFgRadiusKm" 
+                      @change="updateWedgeFromInputs"
+                      :disabled="status.active"
+                      class="ace-input ace-input--sm"
+                    />
+                  </div>
+                  <div class="coordinate-input-wrapper">
+                    <span class="coord-label">Outer</span>
+                    <input 
+                      type="number" 
+                      step="0.1" 
+                      min="0.5"
+                      max="100"
+                      v-model.number="wedgeBgRadiusKm" 
                       @change="updateWedgeFromInputs"
                       :disabled="status.active"
                       class="ace-input ace-input--sm"
@@ -2342,10 +2389,16 @@ const stopMonitoring = async () => {
   cursor: not-allowed;
 }
 
+/* Prevent Leaflet SVG vector paths from blocking pointer events to markers */
+:deep(.leaflet-overlay-pane path) {
+  pointer-events: none !important;
+}
+
 /* Custom styles for leaflet divIcon elements (avoid default white background / borders) */
-.custom-wedge-handle {
+:deep(.custom-wedge-handle) {
   background: transparent !important;
   border: none !important;
+  pointer-events: auto !important;
 }
 
 .wedge-handle-origin {
@@ -2361,6 +2414,7 @@ const stopMonitoring = async () => {
   font-size: 12px;
   box-shadow: 0 0 6px rgba(0,0,0,0.6);
   cursor: grab;
+  pointer-events: auto !important;
 }
 
 .wedge-handle-origin:active {
@@ -2369,22 +2423,32 @@ const stopMonitoring = async () => {
 
 .wedge-handle-fg {
   background: #f69d1d;
-  width: 14px;
-  height: 14px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   border: 2px solid white;
-  box-shadow: 0 0 5px rgba(0,0,0,0.5);
+  box-shadow: 0 0 6px rgba(246, 157, 29, 0.8);
   cursor: grab;
+  pointer-events: auto !important;
+}
+
+.wedge-handle-fg:active {
+  cursor: grabbing;
 }
 
 .wedge-handle-bg {
   background: var(--ace-primary);
-  width: 16px;
-  height: 16px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   border: 2px solid white;
-  box-shadow: 0 0 5px rgba(0,0,0,0.5);
+  box-shadow: 0 0 8px rgba(56, 239, 125, 0.8);
   cursor: grab;
+  pointer-events: auto !important;
+}
+
+.wedge-handle-bg:active {
+  cursor: grabbing;
 }
 
 .wedge-coordinates-panel {
